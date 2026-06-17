@@ -15,6 +15,7 @@ import DepartmentsRoutes from "./routes/departments.route.js"
 import DoctorsRoutes from "./routes/doctors.route.js"
 import AdsRoutes from "./routes/ads.route.js"
 import UsersRoutes from "./routes/users.route.js"
+import AppointmentsRoutes from "./routes/appointments.route.js"
 
 
 
@@ -59,6 +60,8 @@ app.use("/api/doctors", DoctorsRoutes)
 app.use("/api/Ads", AdsRoutes)
 // Users
 app.use("/api/users", UsersRoutes)
+// appointments
+app.use("/api/appointments", AppointmentsRoutes)
 
 
 

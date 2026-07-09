@@ -25,7 +25,7 @@ const handleZodError = (err) => ({
 // @Desc Global error middleware
 export const globalError = (err, req, res, next) => {
 
-    const statusCode = err.statusCode || 500;
+    const statusCode = +err.statusCode || 500;
 
     if (err.name === "JsonWebTokenError")
         err = handleJwtInvalidSignature();

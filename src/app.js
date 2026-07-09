@@ -17,6 +17,8 @@ import AdsRoutes from "./routes/ads.route.js"
 import UsersRoutes from "./routes/users.route.js"
 import AppointmentsRoutes from "./routes/appointments.route.js"
 import DoctorDepartmentsRoutes from "./routes/doctorDepartments.route.js"
+import DoctorScheduleRoutes from "./routes/doctorSchedule.route.js"
+import compression from "compression";
 
 
 
@@ -46,6 +48,9 @@ app.use(express.urlencoded({ extended: true }))
 // To put token in cookie
 app.use(cookieParser());
 
+// compressoin JSON size
+app.use(compression());
+
 
 
 // ========== Routes ============
@@ -63,8 +68,10 @@ app.use("/api/Ads", AdsRoutes)
 app.use("/api/users", UsersRoutes)
 // appointments
 app.use("/api/appointments", AppointmentsRoutes)
-// appointments
+// doctor-departments
 app.use("/api/doctor-departments", DoctorDepartmentsRoutes)
+// doctor-departments
+app.use("/api/doctor-schedule", DoctorScheduleRoutes);
 
 
 

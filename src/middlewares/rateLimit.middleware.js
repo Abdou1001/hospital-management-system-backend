@@ -1,22 +1,34 @@
 import rateLimit from "express-rate-limit";
 
-
-// @Desc Limit auth requests
+// @Desc Limit authentication requests
 export const authRateLimit = rateLimit({
-
     // 15 minutes
     windowMs: 15 * 60 * 1000,
 
-    // 5 requests only
+    // Maximum requests
     max: 5,
 
-    // Error message
     message: {
         status: "fail",
-        message: "محاولات تسجيل دخول كثيرة جدًا، حاول بعد 15 دقيقة",
+        message:
+            "تم تجاوز عدد المحاولات المسموح بها، يرجى المحاولة مرة أخرى بعد 15 دقيقة.",
     },
 
     standardHeaders: true,
     legacyHeaders: false,
+});
 
+export const otpRateLimit = rateLimit({
+    windowMs: 5 * 60 * 1000,
+
+    max: 3,
+
+    message: {
+        status: "fail",
+        message:
+            "تم طلب رمز تحقق عدة مرات، يرجى الانتظار 5 دقائق قبل إعادة المحاولة.",
+    },
+
+    standardHeaders: true,
+    legacyHeaders: false,
 });

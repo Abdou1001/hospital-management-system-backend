@@ -37,17 +37,12 @@ export const updateMyProfileSchema = z.object({
         ])
         .optional(),
 
-    phone_number: z
-        .string()
-        .min(
-            6,
-            "رقم الهاتف غير صالح"
-        )
-        .max(
-            15,
-            "رقم الهاتف غير صالح"
-        )
-        .optional(),
+    email: z
+            .string()
+            .trim()
+            .email("البريد الإلكتروني غير صالح")
+            .optional()
+            .or(z.literal("")),
 
 })
 

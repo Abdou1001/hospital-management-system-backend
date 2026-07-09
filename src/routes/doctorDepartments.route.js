@@ -1,18 +1,26 @@
 import express from "express";
 import { validate } from "../middlewares/validation.middleware.js";
 import { allowedTo, protect } from "../middlewares/auth.middleware.js";
-import { assignDoctorToDepartment, getDoctorDepartmentsInfo } from "../controller/doctorDepartments.controller.js";
-import { assignDoctorToDepartmentSchema } from "../validations/doctorDepartments.validation.js";
+import { assignDoctorToDepartment, deleteDoctorFromDepartment, getDepartmentsByDoctor, getDoctorDepartmentsInfo, getDoctorsByDepartment, getOneDoctorDepartmentInfo, updateDoctorDepartment } from "../controller/doctorDepartments.controller.js";
+import { CRUDDoctorToDepartmentSchema } from "../validations/doctorDepartments.validation.js";
 
 
-// api/appointments/{router}
+// api/doctor-departments/{router}
 
 const router = express.Router();
 
 
 router
-    .get("/", protect, allowedTo("admin"), getDoctorDepartmentsInfo)
-    .post("/", protect, allowedTo("admin"), validate(assignDoctorToDepartmentSchema), assignDoctorToDepartment)
+    .get("/", getDoctorDepartmentsInfo)
+    .post("/", protect, allowedTo("admin"), validate(CRUDDoctorToDepartmentSchema), assignDoctorToDepartment)
+
+    .get("/department/:id", getDoctorsByDepartment)
+    .get("/doctor/:id", getDepartmentsByDoctor)
+    
+    .get("/:id", protect, allowedTo("admin"), getOneDoctorDepartmentInfo)
+    .put("/:id", protect, allowedTo("admin"),validate(CRUDDoctorToDepartmentSchema), updateDoctorDepartment)
+    .delete("/:id", protect, allowedTo("admin"), deleteDoctorFromDepartment)
+
 
 
 

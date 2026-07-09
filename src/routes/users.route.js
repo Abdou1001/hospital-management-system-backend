@@ -1,7 +1,6 @@
 import express from "express";
 import { validate } from "../middlewares/validation.middleware.js";
 import { allowedTo, protect } from "../middlewares/auth.middleware.js";
-import { insertDoctorSchema, updateDoctorSchema } from "../validations/doctors.validation.js";
 import { changeMyPassword, changeUserRole, changeUserStatus, getMyProfile, getOneUserInfo, getUsersInfo, updateMyProfile, updateUser } from "../controller/users.controller.js";
 import { changePasswordSchema, changeUserRoleSchema, updateMyProfileSchema, updateUserSchema } from "../validations/users.validation.js";
 

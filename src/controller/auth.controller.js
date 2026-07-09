@@ -1,38 +1,35 @@
 // Database Connection
-import { supabase } from "../config/supabase.js";
+import {supabase} from "../config/supabase.js";
 
 import AsyncHandler from "express-async-handler";
 import jwt from "jsonwebtoken";
 import ApiError from "../utils/ApiError.js";
 // encription tools
 import bcrypt from "bcrypt";
-import crypto from "crypto"
+import crypto from "crypto";
 // send email to rest password
-import { sendEmail } from "../utils/sendEmail.js";
-import { resetPasswordTemplate } from "../utils/emailTemplate.js";
-
-
+import {sendEmail} from "../utils/sendEmail.js";
+import {resetPasswordTemplate} from "../utils/emailTemplate.js";
+import {normalizeYemenPhone} from "../utils/phone.js";
+import {generateOTPData, hashOTP} from "../utils/otp.js";
+import {sendOTP} from "../services/whatsapp.service.js";
 
 // @Desc Makes Toke for login yours
 // @Param Takes user_هd and role to make token
-const createToken = (payload) => jwt.sign(
-    payload,
-    process.env.SECRET_KEY_JWT,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
-)
+const createToken = (payload) =>
+    jwt.sign(payload, process.env.SECRET_KEY_JWT, {
+        expiresIn: process.env.JWT_EXPIRES_IN,
+    });
 
 // @Desc Makes cookie to put toke on it for premissions
 //      (this function is using createToken() to generate token)
 // @Param Takes user to create token statusCode to put if success res to send response
 export const createSendToken = (user, statusCode, res) => {
-
     // Generate token
-    const token = createToken(
-        {
-            user_id: user.user_id,
-            role: user.role,
-        }
-    );
+    const token = createToken({
+        user_id: user.user_id,
+        role: user.role,
+    });
 
     // delete password for enhance secure
     delete user.password;
@@ -42,106 +39,285 @@ export const createSendToken = (user, statusCode, res) => {
         httpOnly: true,
         secure: false,
         sameSite: "lax",
-        maxAge:
-            7 * 24 * 60 * 60 * 1000,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     // send response
     res.status(statusCode).json({
         status: "success",
+        message: "تم تسجيل الدخول بنجاح",
         user,
     });
 };
 
-
 // ===== auth opertions ====
 
-// @Desc Login Controller, Check if email exist in db then Check from Password
+// @Desc Login Controller, Check if phone or email exist in db then Check Password
 // @Route POST : api/auth/login
-// @Access Public 
+// @Access Public
 export const login = AsyncHandler(async (req, res, next) => {
-    const { email, password } = req.body;
+    const {login, password} = req.body;
 
-    const { data: user, error } = await supabase
-        .from("user")
-        .select("*")
-        .eq("email", email)
-        .single();
+    let query = supabase.from("user").select("*");
 
-    if (error || !user || !(await bcrypt.compare(password, user?.password || "")))
-        return next(new ApiError("البريد الإلكتروني أو كلمة المرور غير صحيحة", 401))
+    // Login by email or phone
+    if (login.includes("@")) {
+        query = query.eq("email", login.trim().toLowerCase());
+    } else {
+        query = query.eq("phone_number", normalizeYemenPhone(login));
+    }
 
+    const {data: user, error} = await query.single();
+
+    if (
+        error ||
+        !user ||
+        !(await bcrypt.compare(password, user?.password || ""))
+    )
+        return next(
+            new ApiError(
+                "رقم الهاتف أو البريد الإلكتروني أو كلمة المرور غير صحيحة",
+                401,
+            ),
+        );
+
+    // Check phone verified
+    if (!user.phone_verified)
+        return next(
+            new ApiError(
+                "الحساب غير مفعل. يرجى إكمال تفعيل رقم الهاتف، أو إعادة التسجيل لإرسال رمز تحقق جديد.",
+                401,
+            ),
+        );
+
+    // Check account status
     if (user.is_Active == "inactive")
-        return next(new ApiError("الحساب موقف من الادارة ارجاء التواصل مع الادارة لفتح الحساب", 401))
+        return next(
+            new ApiError(
+                "الحساب موقف من الإدارة، يرجى التواصل مع الإدارة",
+                401,
+            ),
+        );
 
-
-    // generetes token and put it in cookies
-    createSendToken(
-        user,
-        200,
-        res
-    );
-
+    // Generate token and put it in cookies
+    createSendToken(user, 200, res);
 });
 
-
-// @Desc register Controller, Create New account for user
+// @Desc Register New User
 // @Route POST : api/auth/register
-// @Access Public 
+// @Access Public
 export const register = AsyncHandler(async (req, res, next) => {
-
     // Destructuring
-    const {
-        full_name,
-        email,
-        password,
-        age,
-        gender,
-        phone_number
-    } = req.body;
+    const {full_name, email, password, age, gender, phone_number} = req.body;
+
+    // Normalize phone number
+    const phone = normalizeYemenPhone(phone_number);
+
+    // Check phone
+    const {data: existingUser} = await supabase
+        .from("user")
+        .select("*")
+        .eq("phone_number", phone)
+        .single();
+
+    if (existingUser) {
+        // Account already verified
+        if (existingUser.phone_verified)
+            return next(
+                new ApiError("رقم الهاتف مسجل بالفعل، يمكنك تسجيل الدخول", 409),
+            );
+
+        // Generate OTP
+        const {otp, hashedOTP, expires} = generateOTPData();
+
+        // Update OTP
+        const {error: updateError} = await supabase
+            .from("user")
+            .update({
+                phone_otp: hashedOTP,
+                phone_otp_expires: expires,
+            })
+            .eq("user_id", existingUser.user_id);
+
+        if (updateError)
+            return next(new ApiError("حدث خطأ أثناء إنشاء رمز التحقق", 500));
+
+        // Send WhatsApp OTP
+        await sendOTP(phone, otp);
+
+        console.log(otp);
+
+        return res.status(200).json({
+            status: "success",
+            message: "الحساب غير مفعل، تم إرسال رمز تحقق جديد إلى رقم هاتفك",
+        });
+    }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Generate OTP
+    const {otp, hashedOTP, expires} = generateOTPData();
+
     // Create user
-    const { data: user, error } = await supabase
+    const {data: user, error} = await supabase
         .from("user")
         .insert([
             {
                 full_name,
-                email,
-
+                email: email || null,
                 password: hashedPassword,
-
                 age,
                 gender,
-                phone_number,
+
+                phone_number: phone,
+                phone_verified: false,
+                phone_otp: hashedOTP,
+                phone_otp_expires: expires,
 
                 role: "user",
-
                 created_at: new Date(),
-
-                is_active: "active"
-            }
+                is_active: "active",
+            },
         ])
         .select("*")
         .single();
 
     // Handle DB error
-    if (error)
-        return next(new ApiError("حدث خطاء أثناء إنشاء حساب، حاول مرة اخرى", 400));
+    if (error) {
+        console.log(error);
+        return next(
+            new ApiError("حدث خطأ أثناء إنشاء الحساب، حاول مرة أخرى", 400),
+        );
+    }
 
-    // Send token in cookie
-    createSendToken(user, 201, res);
+    // Send WhatsApp OTP
+    await sendOTP(phone, otp);
 
+    res.status(201).json({
+        status: "success",
+        message:
+            "تم إنشاء الحساب بنجاح، تم إرسال رمز التحقق إلى رقم الواتساب الخاص بك",
+    });
 });
 
+// @Desc Verify Phone OTP
+// @Route POST : /api/auth/verify-phone
+// @Access Public
+export const verifyPhoneOTP = AsyncHandler(async (req, res, next) => {
+    const {phone_number, otp} = req.body;
+
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
+
+    // Hash OTP
+    const hashedOTP = hashOTP(otp);
+
+    // Get user
+    const {data: user, error} = await supabase
+        .from("user")
+        .select("*")
+        .eq("phone_number", phone)
+        .single();
+
+    if (!user || error) return next(new ApiError("الحساب غير موجود", 404));
+
+    // Already verified
+    if (user.phone_verified)
+        return next(
+            new ApiError("تم تفعيل الحساب مسبقًا، يمكنك تسجيل الدخول", 400),
+        );
+
+    // Check OTP
+    if (user.phone_otp !== hashedOTP)
+        return next(new ApiError("رمز التحقق غير صحيح، حاول مرة اخرى", 400));
+
+    // Check Expiration
+    const expiresAt = Date.parse(user.phone_otp_expires);
+
+    console.log("Expires:", new Date(expiresAt).toISOString());
+    console.log("Now:", new Date().toISOString());
+
+    if (Date.now() > user.phone_otp_expires)
+        return next(new ApiError("انتهت صلاحية رمز التحقق", 400));
+
+    // Verify account
+    const {data: verifiedUser, error: updateError} = await supabase
+        .from("user")
+        .update({
+            phone_verified: true,
+            phone_otp: null,
+            phone_otp_expires: null,
+        })
+        .eq("user_id", user.user_id)
+        .select("*")
+        .single();
+
+    if (!verifiedUser || updateError)
+        return next(new ApiError("حدث خطأ أثناء تفعيل الحساب", 500));
+
+    // Login مباشرة
+    createSendToken(verifiedUser, 200, res);
+});
+
+// @Desc Resend Phone Verification OTP
+// @Route POST : /api/auth/resend-otp
+// @Access Public
+export const resendOTP = AsyncHandler(async (req, res, next) => {
+    const {phone_number} = req.body;
+
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
+
+    // Check user
+    const {data: user, error} = await supabase
+        .from("user")
+        .select("*")
+        .eq("phone_number", phone)
+        .single();
+
+    if (!user || error) return next(new ApiError("الحساب غير موجود", 404));
+
+    // Already verified
+    if (user.phone_verified)
+        return next(
+            new ApiError("تم تفعيل الحساب مسبقًا، يمكنك تسجيل الدخول", 400),
+        );
+
+    // Generate OTP
+    const {otp, hashedOTP, expires} = generateOTPData();
+
+    // Save OTP
+    const {error: updateError} = await supabase
+        .from("user")
+        .update({
+            phone_otp: hashedOTP,
+            phone_otp_expires: expires,
+        })
+        .eq("user_id", user.user_id);
+
+    if (updateError)
+        return next(new ApiError("حدث خطأ أثناء إنشاء رمز التحقق", 500));
+
+    try {
+        // Send WhatsApp OTP
+        await sendOTP(phone, otp);
+    } catch (error) {
+        return next(
+            new ApiError("فشل إرسال رمز التحقق عبر واتساب، حاول مرة أخرى", 500),
+        );
+    }
+
+    res.status(200).json({
+        status: "success",
+        message: "تم إعادة إرسال رمز التحقق إلى رقم الواتساب",
+    });
+});
 
 // @Desc Logout user and clear token cookie
 // @Route POST : /api/auth/logout
 // @Access Public
 export const logout = AsyncHandler(async (req, res) => {
-
     res.clearCookie("token", {
         httpOnly: true,
         secure: false,
@@ -152,179 +328,317 @@ export const logout = AsyncHandler(async (req, res) => {
         status: "success",
         message: "تم تسجيل الخروج بنجاح",
     });
+});
 
+// ============ Change Phone Number to New One =============
+
+// @Desc Change Phone Number
+// @Route POST : /api/auth/change-phone
+// @Access Private
+export const changePhoneNumber = AsyncHandler(async (req, res, next) => {
+    const {phone_number} = req.body;
+
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
+
+    // Check phone already exists
+    const {data: existingUser} = await supabase
+        .from("user")
+        .select("user_id")
+        .eq("phone_number", phone)
+        .single();
+
+    if (existingUser)
+        return next(new ApiError("رقم الهاتف مستخدم بالفعل", 409));
+
+    // Generate OTP
+    const {otp, hashedOTP, expires} = generateOTPData();
+
+    // Save new phone
+    const {error} = await supabase
+        .from("user")
+        .update({
+            new_phone_number: phone,
+            phone_otp: hashedOTP,
+            phone_otp_expires: expires,
+        })
+        .eq("user_id", req.user.user_id);
+
+    if (error) return next(new ApiError("حدث خطأ أثناء حفظ البيانات", 500));
+
+    try {
+        await sendOTP(phone, otp);
+    } catch (error) {
+        return next(new ApiError("فشل إرسال رمز التحقق عبر واتساب", 500));
+    }
+
+    console.log(otp);
+    
+    res.status(200).json({
+        status: "success",
+        message: "تم إرسال رمز التحقق إلى رقم الهاتف الجديد",
+    });
 });
 
 
+// @Desc Verify Changed Phone Number
+// @Route POST : /api/auth/verify-change-phone
+// @Access Private
+export const verifyChangePhoneNumber = AsyncHandler(
+    async (req, res, next) => {
+        const {otp} = req.body;
 
+        // Hash OTP
+        const hashedOTP = hashOTP(otp);
 
+        // Check user
+        const {data: user, error} = await supabase
+            .from("user")
+            .select("*")
+            .eq("user_id", req.user.user_id)
+            .eq("phone_otp", hashedOTP)
+            .gt("phone_otp_expires", new Date().toISOString())
+            .single();
 
-// ===== Forgetten Password Code =====
+        if (!user || error)
+            return next(
+                new ApiError(
+                    "رمز التحقق غير صحيح أو انتهت صلاحيته",
+                    400,
+                ),
+            );
 
-// @Desc Send reset password code to user email
+        // Update phone
+        const {error: updateError} = await supabase
+            .from("user")
+            .update({
+                phone_number: user.new_phone_number,
+                new_phone_number: null,
+                phone_otp: null,
+                phone_otp_expires: null,
+            })
+            .eq("user_id", user.user_id);
+
+        if (updateError)
+            return next(
+                new ApiError(
+                    "حدث خطأ أثناء تغيير رقم الهاتف",
+                    500,
+                ),
+            );
+
+        res.status(200).json({
+            status: "success",
+            message: "تم تغيير رقم الهاتف بنجاح",
+        });
+    },
+);
+
+// @Desc Resend Change Phone OTP
+// @Route POST : /api/auth/resend-change-phone-otp
+// @Access Private
+export const resendChangePhoneOTP = AsyncHandler(
+    async (req, res, next) => {
+        const {data: user, error} = await supabase
+            .from("user")
+            .select("*")
+            .eq("user_id", req.user.user_id)
+            .single();
+
+        if (!user || error)
+            return next(new ApiError("المستخدم غير موجود", 404));
+
+        if (!user.new_phone_number)
+            return next(
+                new ApiError(
+                    "لا يوجد طلب تغيير رقم هاتف",
+                    400,
+                ),
+            );
+
+        const {otp, hashedOTP, expires} = generateOTPData();
+
+        await supabase
+            .from("user")
+            .update({
+                phone_otp: hashedOTP,
+                phone_otp_expires: expires,
+            })
+            .eq("user_id", user.user_id);
+
+        await sendOTP(user.new_phone_number, otp);
+
+        res.status(200).json({
+            status: "success",
+            message: "تم إعادة إرسال رمز التحقق",
+        });
+    },
+);
+
+// ============ Forgetten Password Code ===========
+
+// @Desc Send reset password code to user WhatsApp
 // @Route POST : /api/auth/forget-password
 // @Access Public
 export const forgetPassword = AsyncHandler(async (req, res, next) => {
+    const {phone_number} = req.body;
 
-    const { email } = req.body;
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
 
     // Check if user exists
-    const { data: user, error } = await supabase
+    const {data: user, error} = await supabase
         .from("user")
         .select("*")
-        .eq("email", email)
+        .eq("phone_number", phone)
         .single();
 
-    if (error || !user)
-        return next(new ApiError("البريد الإلكتروني غير موجود", 404));
+    if (!user || error) return next(new ApiError("رقم الهاتف غير موجود", 404));
 
+    // Check phone verified
+    if (!user.phone_verified)
+        return next(
+            new ApiError("الحساب غير مفعل، يرجى تفعيل رقم الهاتف أولاً", 400),
+        );
 
-    // Generate 6 digit code
-    const passwordResetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate OTP
+    const {otp, hashedOTP, expires} = generateOTPData();
 
-    // Hash reset code
-    const hashedPasswordResetCode = crypto
-        .createHash("sha256")
-        .update(passwordResetCode)
-        .digest("hex");
-
-
-    // Save hashed code in DB
-    const { error: updateError } = await supabase
+    // Save OTP
+    const {error: updateError} = await supabase
         .from("user")
         .update({
-            password_reset_code:
-                hashedPasswordResetCode,
-            password_reset_expires:
-                new Date(
-                    Date.now() + 10 * 60 * 1000
-                ),
-            password_reset_verified:
-                false,
+            password_reset_code: hashedOTP,
+            password_reset_expires: expires,
+            password_reset_verified: false,
         })
-        .eq("email", email);
+        .eq("user_id", user.user_id);
 
     if (updateError)
-        return next(new ApiError("حدث خطأ أثناء حفظ الكود", 500));
-
-
-    // Send email here
-    // Desgin tempalte for Email message
-    const message = resetPasswordTemplate(passwordResetCode);
+        return next(new ApiError("حدث خطأ أثناء إنشاء رمز التحقق", 500));
 
     try {
-        await sendEmail({
-            to: user.email,
-            subject:
-                "إعادة تعيين كلمة المرور - Hospital System",
-            html: message,
-        });
+        // Send WhatsApp OTP
+        await sendOTP(phone, otp);
     } catch (error) {
-        const { error: updateError } = await supabase
+        // Rollback
+        await supabase
             .from("user")
             .update({
                 password_reset_code: null,
                 password_reset_expires: null,
-                password_reset_verified: null,
+                password_reset_verified: false,
             })
-            .eq("email", email);
+            .eq("user_id", user.user_id);
 
         return next(
-            new ApiError(
-                "فشل إرسال البريد الإلكتروني، حاول مرة أخرى",
-                500
-            )
-        )
+            new ApiError("فشل إرسال رمز التحقق عبر واتساب، حاول مرة أخرى", 500),
+        );
     }
 
-
+    console.log(otp);
     res.status(200).json({
         status: "success",
-        message: `تم إرسال كود على البريد الالكتروني ${user.email}\n ادخل الكود المرسل هنا`,
+        message: "تم إرسال رمز التحقق إلى رقم الواتساب الخاص بك",
     });
-
 });
-
 
 // @Desc User sends reset password code to verify it
 // @Route POST : /api/auth/verify-reset-code
 // @Access Public
 export const verifyPasswordResetCode = AsyncHandler(async (req, res, next) => {
-    const { resetCode } = req.body;
+    const {phone_number, resetCode} = req.body;
 
-    const hashedPasswordResetCode = crypto
-        .createHash("sha256")
-        .update(resetCode)
-        .digest("hex")
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
 
-    const { data: user, error } = await supabase
+    // Hash reset code
+    const hashedPasswordResetCode = hashOTP(resetCode);
+
+    // Check user + code + expiration
+    const {data: user, error} = await supabase
         .from("user")
         .select("*")
+        .eq("phone_number", phone)
         .eq("password_reset_code", hashedPasswordResetCode)
         .gt("password_reset_expires", new Date().toISOString())
-        .single()
+        .single();
 
     if (!user || error)
-        return next(new ApiError("الكود غير صالح أو انتهت صلاحيته حاول مرة اخرى", 400))
+        return next(
+            new ApiError(
+                "رمز التحقق غير صالح أو انتهت صلاحيته، حاول مرة أخرى",
+                400,
+            ),
+        );
 
-
-    const { data: update, error: updateError } = await supabase
+    // Mark code as verified
+    const {error: updateError} = await supabase
         .from("user")
-        .update(
-            {
-                "password_reset_verified": true,
-            }
-        )
-        .eq("user_id", user.user_id)
-        .select("*")
+        .update({
+            password_reset_verified: true,
+        })
+        .eq("user_id", user.user_id);
 
+    if (updateError) return next(new ApiError("حدث خطأ، حاول مرة أخرى", 400));
 
-    if (updateError)
-        return next(new ApiError("حدث خطأ، حاول مرة أخرى", 400))
+    res.status(200).json({
+        status: "success",
+        message: "تم التحقق من رمز الاستعادة بنجاح",
+    });
+});
 
-    res.status(200).json({ message: "تم التحقق من الكود بنجاح" })
-})
-
-
-// @Desc Reset password 
+// @Desc Reset user password
 // @Route POST : /api/auth/reset-password
 // @Access Public
 export const resetPassword = AsyncHandler(async (req, res, next) => {
-    const { email, newPassword } = req.body
+    const {phone_number, newPassword} = req.body;
 
+    // Normalize phone
+    const phone = normalizeYemenPhone(phone_number);
 
-    const { data: user, error } = await supabase
+    // Check user
+    const {data: user, error} = await supabase
         .from("user")
-        .select('*')
-        .eq("email", email)
-        .single()
-
+        .select("*")
+        .eq("phone_number", phone)
+        .single();
 
     if (!user || error)
-        return next(new ApiError("المستخدم غير موجود حاول مرة اخرى", 404))
+        return next(new ApiError("المستخدم غير موجود، حاول مرة أخرى", 404));
 
+    // Check verification
     if (!user.password_reset_verified)
-        return next(new ApiError("كود التفعيل انتهى او غير فعال", 401))
+        return next(
+            new ApiError("رمز التحقق غير صالح أو لم يتم التحقق منه", 401),
+        );
 
-    const hashedPassword = await bcrypt.hash(newPassword, 12)
+    // Hash password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
 
-    const { data: updateUser, error: updateError } = await supabase
+    // Update password
+    const {data: updateUser, error: updateError} = await supabase
         .from("user")
-        .update(
-            {
-                "password": hashedPassword,
-                "password_reset_code": null,
-                "password_reset_expires": null,
-                "password_reset_verified": false,
-                "password_changed_at": new Date()
-            }
-        )
-        .eq("email", email)
+        .update({
+            password: hashedPassword,
+
+            password_reset_code: null,
+            password_reset_expires: null,
+            password_reset_verified: false,
+
+            password_changed_at: new Date(),
+        })
+        .eq("phone_number", phone)
         .select("*")
-        .single()
+        .single();
 
     if (!updateUser || updateError)
-        return next(new ApiError("المستخدم غير موجود حاول مرة اخرى", 404))
+        return next(
+            new ApiError("حدث خطأ أثناء تغيير كلمة المرور، حاول مرة أخرى", 400),
+        );
 
-    res.status(200).json({ message: "تم تغيير كلمة المرور بنجاح" })
-})
+    res.status(200).json({
+        status: "success",
+        message: "تم تغيير كلمة المرور بنجاح",
+    });
+});

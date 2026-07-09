@@ -36,7 +36,7 @@ export const insertDoctorSchema = z.object({
         .max(100, "المؤهل العلمي طويل جدًا"),
 
     gender: z.enum(
-        ["male", "female"],
+        ["ذكر", "اثنى"],
         {
             errorMap: () => ({
                 message: "الجنس غير صالح",
@@ -56,11 +56,6 @@ export const insertDoctorSchema = z.object({
         .min(6, "رقم الهاتف غير صالح")
         .max(15, "رقم الهاتف غير صالح")
         .optional(),
-
-    path_image: z
-        .string({
-            required_error: "صورة الدكتور مطلوبة",
-        }),
 
     notes: z
         .string()
@@ -105,81 +100,59 @@ export const insertDoctorSchema = z.object({
    Update Doctor Validation
 ========================= */
 
-export const updateDoctorSchema = z.object({
+export const updateDoctorSchema = z
+    .object({
+        full_name: z
+            .string()
+            .min(3, "اسم الدكتور قصير جدًا")
+            .max(50, "اسم الدكتور طويل جدًا")
+            .optional(),
 
-    full_name: z
-        .string()
-        .min(3, "اسم الدكتور قصير جدًا")
-        .max(50, "اسم الدكتور طويل جدًا")
-        .optional(),
+        email: z
+            .string()
+            .trim()
+            .email("البريد الإلكتروني غير صالح")
+            .optional()
+            .or(z.literal("")),
 
-    email: z
-        .string()
-        .trim()
-        .email("البريد الإلكتروني غير صالح")
-        .optional()
-        .or(z.literal("")),
+        bio: z
+            .string()
+            .min(10, "الوصف قصير جدًا")
+            .max(1000, "الوصف طويل جدًا")
+            .optional(),
 
-    bio: z
-        .string()
-        .min(10, "الوصف قصير جدًا")
-        .max(1000, "الوصف طويل جدًا")
-        .optional(),
+        education: z
+            .string()
+            .min(3, "المؤهل العلمي قصير جدًا")
+            .max(100, "المؤهل العلمي طويل جدًا")
+            .optional(),
 
-    education: z
-        .string()
-        .min(3, "المؤهل العلمي قصير جدًا")
-        .max(100, "المؤهل العلمي طويل جدًا")
-        .optional(),
+        gender: z.enum(["ذكر", "اثنى"]).optional(),
 
-    gender: z
-        .enum([
-            "male",
-            "female"
-        ])
-        .optional(),
+        years_exper: z.coerce
+            .number()
+            .min(0, "سنوات الخبرة غير صالحة")
+            .max(60, "سنوات الخبرة غير صالحة")
+            .optional(),
 
-    years_exper: z.coerce
-        .number()
-        .min(0, "سنوات الخبرة غير صالحة")
-        .max(60, "سنوات الخبرة غير صالحة")
-        .optional(),
+        phone_number: z
+            .string()
+            .min(6, "رقم الهاتف غير صالح")
+            .max(15, "رقم الهاتف غير صالح")
+            .optional(),
 
-    phone_number: z
-        .string()
-        .min(6, "رقم الهاتف غير صالح")
-        .max(15, "رقم الهاتف غير صالح")
-        .optional(),
+        notes: z.string().max(500, "الملاحظات طويلة جدًا").optional(),
 
-    path_image: z
-        .string()
-        .optional(),
-
-    notes: z
-        .string()
-        .max(500, "الملاحظات طويلة جدًا")
-        .optional(),
-
-    status: z
-        .enum([
-            "active",
-            "inactive"
-        ])
-        .optional(),
-
-    consultation_fee: z.coerce
-        .number()
-        .positive("سعر الاستشارة غير صالح")
-        .optional(),
-
-})
+        consultation_fee: z.coerce
+            .number()
+            .positive("سعر الاستشارة غير صالح")
+            .optional(),
+    })
 
     .refine(
-        (data) =>
-            Object.keys(data).length > 0,
+        (data) => Object.keys(data).length > 0,
 
         {
-            message:
-                "يجب إرسال حقل واحد على الأقل للتعديل",
-        }
+            message: "يجب إرسال حقل واحد على الأقل للتعديل",
+        },
     );

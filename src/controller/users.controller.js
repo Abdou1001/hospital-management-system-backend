@@ -83,19 +83,12 @@ export const getUsersInfo = AsyncHandler(async (req, res, next) => {
         );
 
     res.status(200).json({
-
         status: "success",
+        message: "تم جلب البيانات بنجاح",
 
-        pagination:
-            paginationResult(
-                page,
-                limit,
-                count
-            ),
+        pagination: paginationResult(page, limit, count),
 
-        results:
-            users
-
+        results: users,
     });
 
 });
@@ -135,12 +128,10 @@ export const getOneUserInfo = AsyncHandler(async (req, res, next) => {
 
 
     res.status(200).json({
-
         status: "success",
+        message: "تم جلب البيانات بنجاح",
 
-        results:
-            user
-
+        results: user,
     });
 
 });
@@ -157,7 +148,7 @@ export const updateUser = AsyncHandler(async (req, res, next) => {
         full_name,
         age,
         gender,
-        phone_number
+        emali
     } = req.body;
 
     const { data: user, error } = await supabase
@@ -167,7 +158,7 @@ export const updateUser = AsyncHandler(async (req, res, next) => {
             full_name,
             age,
             gender,
-            phone_number
+            emali
         })
 
         .eq(
@@ -189,12 +180,10 @@ export const updateUser = AsyncHandler(async (req, res, next) => {
         );
 
     res.status(200).json({
-
         status: "success",
+        message: "تم تعديل البيانات بنجاح",
 
-        results:
-            user
-
+        results: user,
     });
 
 });
@@ -267,12 +256,10 @@ export const changeUserStatus = AsyncHandler(async (req, res, next) => {
 
 
     res.status(200).json({
-
         status: "success",
+        message: "تم تعديل حالة المتسخدم بنجاح",
 
-        results:
-            user
-
+        results: user,
     });
 
 });
@@ -321,12 +308,10 @@ export const changeUserRole = AsyncHandler(async (req, res, next) => {
 
 
     res.status(200).json({
-
         status: "success",
+        message: "تم تعديل دور المستخدم بنجاح",
 
-        results:
-            user
-
+        results: user,
     });
 
 });
@@ -340,9 +325,6 @@ export const changeUserRole = AsyncHandler(async (req, res, next) => {
 // @Route GET : /api/users/profile
 // @Access Private
 export const getMyProfile = AsyncHandler(async (req, res, next) => {
-
-    console.log(req.user.user_id)
-    console.log("CODE...")
 
     const {
         data: user,
@@ -371,15 +353,14 @@ export const getMyProfile = AsyncHandler(async (req, res, next) => {
 
 
     res.status(200).json({
-
         status: "success",
+        message: "تم جلب البيانات بنجاح",
 
-        results:
-            user
-
+        results: user,
     });
 
 });
+
 
 // @Desc Update my profile
 // @Route PUT : /api/users/profile
@@ -390,13 +371,10 @@ export const updateMyProfile = AsyncHandler(async (req, res, next) => {
         full_name,
         age,
         gender,
-        phone_number
+        emali
     } = req.body;
 
-    const {
-        data: user,
-        error
-    } = await supabase
+    const {data: user, error} = await supabase
 
         .from("user")
 
@@ -404,13 +382,10 @@ export const updateMyProfile = AsyncHandler(async (req, res, next) => {
             full_name,
             age,
             gender,
-            phone_number
+            emali,
         })
 
-        .eq(
-            "user_id",
-            req.user.user_id
-        )
+        .eq("user_id", req.user.user_id)
 
         .select(selectedColumns)
 

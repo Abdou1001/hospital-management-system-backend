@@ -2,9 +2,9 @@ import { z } from "zod";
 
 
 /* =========================
-   Assign Doctor To DepartmentSchema Validation
+   CRUD Doctor To DepartmentSchema Validation
 ========================= */
-export const assignDoctorToDepartmentSchema = z.object({
+export const CRUDDoctorToDepartmentSchema = z.object({
 
     doctor_id: z.coerce
 

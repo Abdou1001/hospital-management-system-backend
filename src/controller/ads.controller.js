@@ -12,6 +12,7 @@ import {
 } from "../services/imageUpload.service.js";
 import {
     deleteByPattern,
+    deleteCache,
     getCache,
     setCache,
 } from "../services/cache.service.js";
@@ -188,6 +189,7 @@ export const insertAd = AsyncHandler(async (req, res, next) => {
 
         // Delete caching to update data
         await deleteByPattern("ads:*");
+        await deleteCache(CACHE_KEYS.DASHBOARD);
 
         // Add public image url
         ad.image_url = getPublicImageUrl(STORAGE_BUCKETS.ADS, ad.path_image);
@@ -256,6 +258,7 @@ export const updateAd = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add public image url
     ad.image_url = getPublicImageUrl(STORAGE_BUCKETS.ADS, ad.path_image);
@@ -295,6 +298,7 @@ export const deleteAd = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     await deleteImage(STORAGE_BUCKETS.ADS, ad.path_image);
 
@@ -340,6 +344,7 @@ export const toggleAdStatus = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add image url
     updatedAd.image_url = getPublicImageUrl(

@@ -2,9 +2,18 @@ import {supabase} from "../config/supabase.js";
 import AsyncHandler from "express-async-handler";
 import ApiError from "../utils/ApiError.js";
 import {paginate, paginationResult} from "../utils/pagination.js";
-import { STORAGE_BUCKETS } from "../config/storage.js";
-import { createSignedImageUrl, getPublicImageUrl } from "../services/storage.service.js";
-import { replaceImage, rollbackUploadedImage, uploadAndProcessImage } from "../services/imageUpload.service.js";
+import {STORAGE_BUCKETS} from "../config/storage.js";
+import {
+    createSignedImageUrl,
+    getPublicImageUrl,
+} from "../services/storage.service.js";
+import {
+    replaceImage,
+    rollbackUploadedImage,
+    uploadAndProcessImage,
+} from "../services/imageUpload.service.js";
+import {deleteCache} from "../services/cache.service.js";
+import {CACHE_KEYS} from "../config/cache.js";
 
 const platform_fee_ = 500;
 const selectStatment = `*,doctor (doctor_id,full_name,path_image),user (user_id,full_name,email,phone_number,age,gender)`;
@@ -443,6 +452,10 @@ export const createAppointment = AsyncHandler(async (req, res, next) => {
         if (!appoint || error)
             throw new ApiError("حدث خطأ أثناء إنشاء الحجز", 400);
 
+        // Delete Caching
+        await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+        await deleteCache(CACHE_KEYS.DASHBOARD);
+
         res.status(201).json({
             status: "success",
             message:
@@ -611,6 +624,10 @@ export const updateAppointment = AsyncHandler(async (req, res, next) => {
         },
     });
 
+    // Delete Cache
+    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    await deleteCache(CACHE_KEYS.DASHBOARD);
+
     if (appointment.doctor?.path_image) {
         appointment.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
@@ -709,6 +726,10 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
             );
     }
 
+    // Delete Caching
+    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    await deleteCache(CACHE_KEYS.DASHBOARD);
+
     // Update appointment
     const {data: changedAppointment, error: changeError} = await supabase
         .from("appointment")
@@ -791,6 +812,10 @@ export const cancelAppointment = AsyncHandler(async (req, res, next) => {
 
     if (!cancelledAppointment || cancelError)
         return next(new ApiError("حدث خطأ أثناء إلغاء الحجز", 400));
+
+    // Delete Caching
+    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     res.status(200).json({
         status: "success",

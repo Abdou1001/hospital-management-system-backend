@@ -6,6 +6,7 @@ import {getPublicImageUrl} from "../services/storage.service.js";
 import {STORAGE_BUCKETS} from "../config/storage.js";
 import {
     deleteByPattern,
+    deleteCache,
     getCache,
     setCache,
 } from "../services/cache.service.js";
@@ -264,6 +265,7 @@ export const assignDoctorToDepartment = AsyncHandler(async (req, res, next) => {
         return next(new ApiError("حدث خطأ أثناء ربط الدكتور بالقسم", 400));
 
     await deleteByPattern("doctor-departments:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     assign.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -367,6 +369,7 @@ export const updateDoctorDepartment = AsyncHandler(async (req, res, next) => {
         return next(new ApiError("حدث خطأ أثناء تعديل العلاقة", 400));
 
     await deleteByPattern("doctor-departments:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     updatedRelation.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -417,6 +420,7 @@ export const deleteDoctorFromDepartment = AsyncHandler(
             return next(new ApiError("حدث خطأ أثناء حذف العلاقة", 400));
 
         await deleteByPattern("doctor-departments:*");
+        await deleteCache(CACHE_KEYS.DASHBOARD);
 
         res.status(200).json({
             status: "success",

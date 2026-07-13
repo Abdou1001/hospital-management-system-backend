@@ -6,6 +6,7 @@ import {getPublicImageUrl} from "../services/storage.service.js";
 import {STORAGE_BUCKETS} from "../config/storage.js";
 import {
     deleteByPattern,
+    deleteCache,
     getCache,
     setCache,
 } from "../services/cache.service.js";
@@ -262,6 +263,7 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         );
 
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     assign.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -352,6 +354,7 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         );
 
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     update.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -411,6 +414,7 @@ export const deleteDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         );
 
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Response
     res.status(200).json({
@@ -457,6 +461,7 @@ export const changeDoctorScheduleStatus = AsyncHandler(
             return next(new ApiError("حدث خطأ أثناء تحديث حالة الدوام", 400));
 
         await deleteByPattern("doctor-schedules:*");
+        await deleteCache(CACHE_KEYS.DASHBOARD);
 
         // Response
         res.status(200).json({

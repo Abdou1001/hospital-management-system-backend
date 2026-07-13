@@ -108,6 +108,7 @@ export const updateHospitalInfo = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteCache(CACHE_KEYS.HOSPITAL);
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add public image url
     hospital.path_image = getPublicImageUrl(

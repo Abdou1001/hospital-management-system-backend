@@ -13,6 +13,8 @@ import {resetPasswordTemplate} from "../utils/emailTemplate.js";
 import {normalizeYemenPhone} from "../utils/phone.js";
 import {generateOTPData, hashOTP} from "../utils/otp.js";
 import {sendOTP} from "../services/whatsapp.service.js";
+import { deleteCache } from "../services/cache.service.js";
+import { CACHE_KEYS } from "../config/cache.js";
 
 // @Desc Makes Toke for login yours
 // @Param Takes user_هd and role to make token
@@ -255,6 +257,8 @@ export const verifyPhoneOTP = AsyncHandler(async (req, res, next) => {
 
     if (!verifiedUser || updateError)
         return next(new ApiError("حدث خطأ أثناء تفعيل الحساب", 500));
+
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Login مباشرة
     createSendToken(verifiedUser, 200, res);

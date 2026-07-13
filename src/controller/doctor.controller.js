@@ -9,7 +9,7 @@ import {
     rollbackUploadedImage,
     uploadAndProcessImage,
 } from "../services/imageUpload.service.js";
-import {deleteByPattern, getCache, setCache} from "../services/cache.service.js";
+import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cache.service.js";
 import { CACHE_KEYS, CACHE_TTL } from "../config/cache.js";
 
 // @Desc Get all Doctors with pagination, search, filters and sorting
@@ -219,6 +219,7 @@ export const insertDoctor = AsyncHandler(async (req, res, next) => {
 
         // Delete caching to update data
         await deleteByPattern("doctors:*");
+        await deleteCache(CACHE_KEYS.DASHBOARD);
 
         doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
@@ -302,6 +303,7 @@ export const updateDoctor = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -340,6 +342,7 @@ export const changeDoctorStatus = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -378,6 +381,7 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,

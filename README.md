@@ -105,7 +105,7 @@ Role-based authorization is implemented for:
 Clone the repository
 
 ```bash
-git clone https://github.com/your-username/hospital-management-system-backend.git
+git clone https://github.com/Abdou1001/hospital-management-system-backend.git
 ```
 
 Go to project directory
@@ -209,4 +209,4 @@ This project is developed for educational purposes and real-world deployment.
 
 # 👨‍💻 Author
 
-Developed by **Your Name**
+Developed by **Abdulrahman Ahmed Bin Saad**

@@ -2,71 +2,107 @@ import {supabase} from "../config/supabase.js";
 import AsyncHandler from "express-async-handler";
 import ApiError from "../utils/ApiError.js";
 import {paginate, paginationResult} from "../utils/pagination.js";
+import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
+import {getCache, setCache} from "../services/cache.service.js";
 
 // @Desc Get Statistics Dashboard (Number of Users, Number of Doctors, Number of Deparments
 //  Number of Ads, Number of Appointments)
 // @Route GET : /api/ads
 // @Access Private (Admin)
 export const StatisticsDashboard = AsyncHandler(async (req, res, next) => {
-    // Number of Users
-    const {
-        data: user,
-        error: userError,
-        count: numberUsers,
-    } = supabase.from("user").select("user_id", {count: "exact"});
+    // Check Redis Cache
+    const cachedStatistics = await getCache(CACHE_KEYS.DASHBOARD);
 
-    if (!user || error)
-        return next(new ApiError("حدث خطاء اثناء جلب المستخدمين"));
+    if (cachedStatistics) {
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedStatistics,
+        });
+    }
 
-    // Number of Doctors
-    const {
-        data: doctor,
-        error: doctorError,
-        count: numberDoctors,
-    } = supabase.from("doctor").select("doctor_id", {count: "exact"});
+    // Execute Queries
+    const [
+        {count: numberUsers, error: userError},
+        {count: numberDoctors, error: doctorError},
+        {count: numberDepartments, error: departmentError},
+        {count: numberAds, error: adsError},
+        {count: numberAppointments, error: appointmentError},
+    ] = await Promise.all([
+        supabase.from("user").select("*", {count: "exact", head: true}),
 
-    if (!doctor || doctorError)
-        return next(new ApiError("حدث خطاء اثناء جلب المستخدمين"));
+        supabase.from("doctor").select("*", {count: "exact", head: true}),
 
-    // Number of departments
-    const {
-        data: department,
-        error: departmentError,
-        count: numberDepartments,
-    } = supabase.from("department").select("depart_id", {count: "exact"});
+        supabase.from("department").select("*", {count: "exact", head: true}),
 
-    if (!department || departmentError)
-        return next(new ApiError("حدث خطاء اثناء جلب الاقسام"));
+        supabase.from("ads").select("*", {count: "exact", head: true}),
 
-    // Number of Ads
-    const {
-        data: ads,
-        error: adsError,
-        count: numberAds,
-    } = supabase.from("ads").select("ads_id", {count: "exact"});
+        supabase.from("appointment").select("*", {count: "exact", head: true}),
+    ]);
 
-    if (!ads || adsError)
-        return next(new ApiError("حدث خطاء اثناء جلب الاعلانات"));
+    // Handle Errors
+    if (userError)
+        return next(new ApiError("حدث خطأ أثناء جلب عدد المستخدمين", 500));
 
-    // Number of Appointments
-    const {
-        data: appointment,
-        error: appointmentError,
-        count: numberAppointments,
-    } = supabase.from("appointment").select("appointment_id", {count: "exact"});
+    if (doctorError)
+        return next(new ApiError("حدث خطأ أثناء جلب عدد الأطباء", 500));
 
-    if (!appointment || appointmentError)
-        return next(new ApiError("حدث خطاء اثناء جلب الحجوزات"));
+    if (departmentError)
+        return next(new ApiError("حدث خطأ أثناء جلب عدد الأقسام", 500));
+
+    if (adsError)
+        return next(new ApiError("حدث خطأ أثناء جلب عدد الإعلانات", 500));
+
+    if (appointmentError)
+        return next(new ApiError("حدث خطأ أثناء جلب عدد الحجوزات", 500));
+
+    const statistics = {
+        numberUsers,
+        numberDoctors,
+        numberDepartments,
+        numberAds,
+        numberAppointments,
+    };
+
+    // Save Redis Cache
+    await setCache(CACHE_KEYS.DASHBOARD, statistics, CACHE_TTL.DASHBOARD);
+
+    // Response
+    res.status(200).json({
+        status: "success",
+        message: "تم جلب البيانات بنجاح",
+        results: statistics,
+    });
+});
+
+export const appointmentsChart = AsyncHandler(async (req, res, next) => {
+    // Check Cache
+    const cachedChart = await getCache(CACHE_KEYS.APPOINTMENTS_CHART);
+
+    if (cachedChart) {
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedChart,
+        });
+    }
+
+    // Query View
+    const {data, error} = await supabase
+        .from("appointments_by_month")
+        .select("*");
+
+    if (!data || error)
+        return next(
+            new ApiError("حدث خطأ أثناء جلب بيانات الرسم البياني", 500),
+        );
+
+    // Save Cache
+    await setCache(CACHE_KEYS.APPOINTMENTS_CHART, data, CACHE_TTL.DASHBOARD);
 
     res.status(200).json({
-        status: "",
+        status: "success",
         message: "تم جلب البيانات بنجاح",
-        results: {
-            numberUsers,
-            numberDepartments,
-            numberDoctors,
-            numberAds,
-            numberAppointments,
-        },
+        results: data,
     });
 });

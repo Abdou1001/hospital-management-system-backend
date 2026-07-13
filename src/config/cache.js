@@ -21,6 +21,10 @@ export const CACHE_KEYS = {
     // Ads
     ADS: "ads",
     AD: (id) => `ad:${id}`,
+
+    // DASHBOARD
+    DASHBOARD: "dashboard-statistics",
+    APPOINTMENTS_CHART: "appointments-chart",
 };
 
 export const CACHE_TTL = {
@@ -30,4 +34,5 @@ export const CACHE_TTL = {
     DOCTOR_DEPARTMENTS: 86400, // 24 ساعة
     DOCTOR_SCHEDULES: 86400, // 24 ساعة
     ADS: 21600, // 6 ساعات
+    DASHBOARD = 300
 };

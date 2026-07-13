@@ -11,7 +11,7 @@ import {
     uploadAndProcessImage,
 } from "../services/imageUpload.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
-import {deleteByPattern, getCache, setCache} from "../services/cache.service.js";
+import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cache.service.js";
 
 // @Desc Get all departments with pagination
 // @Route GET : /api/departments
@@ -170,6 +170,7 @@ export const insertDepartment = AsyncHandler(async (req, res, next) => {
 
         // Delete caching to update data
         await deleteByPattern("departments:*");
+        await deleteCache(CACHE_KEYS.DASHBOARD);
 
         // Add public image url
         department.path_image = getPublicImageUrl(
@@ -252,6 +253,7 @@ export const updatetDepartment = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("departments:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add public image url
     department.path_image = getPublicImageUrl(
@@ -295,6 +297,7 @@ export const deleteDepartment = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("departments:*");
+    await deleteCache(CACHE_KEYS.DASHBOARD);
 
     res.status(200).json({
         status: "success",

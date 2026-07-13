@@ -19,7 +19,7 @@ import UsersRoutes from "./routes/users.route.js";
 import AppointmentsRoutes from "./routes/appointments.route.js";
 import DoctorDepartmentsRoutes from "./routes/doctorDepartments.route.js";
 import DoctorScheduleRoutes from "./routes/doctorSchedule.route.js";
-import dashboardRouter from "./routes/dashboard.routes.js";
+import dashboardRouter from "./routes/dashboard.route.js";
 
 // .env configurtion
 dotenv.config();
@@ -74,7 +74,7 @@ app.use("/api/dashboard", dashboardRouter);
 
 // 404 handler
 app.all("/{*any}", (req, res, next) => {
-    next(new ApiError(`Can't find ${req.originalUrl}`, 404));
+    next(new ApiError(`لا يوجد رابط بهذا الشكل! ${req.originalUrl}`, 404));
 });
 
 // error handler

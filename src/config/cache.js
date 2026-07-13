@@ -34,5 +34,5 @@ export const CACHE_TTL = {
     DOCTOR_DEPARTMENTS: 86400, // 24 ساعة
     DOCTOR_SCHEDULES: 86400, // 24 ساعة
     ADS: 21600, // 6 ساعات
-    DASHBOARD = 300
+    DASHBOARD: 300 // 5 دقائق
 };

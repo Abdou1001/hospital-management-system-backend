@@ -453,8 +453,10 @@ export const createAppointment = AsyncHandler(async (req, res, next) => {
             throw new ApiError("حدث خطأ أثناء إنشاء الحجز", 400);
 
         // Delete Caching
+        const year = new Date().getFullYear();
         await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
         await deleteCache(CACHE_KEYS.DASHBOARD);
+        await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${year}`);
 
         res.status(201).json({
             status: "success",

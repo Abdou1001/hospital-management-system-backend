@@ -9,7 +9,7 @@ import {getCache, setCache} from "../services/cache.service.js";
 //  Number of Ads, Number of Appointments)
 // @Route GET : /api/ads
 // @Access Private (Admin)
-export const StatisticsDashboard = AsyncHandler(async (req, res, next) => {
+export const statisticsDashboard = AsyncHandler(async (req, res, next) => {
     // Check Redis Cache
     const cachedStatistics = await getCache(CACHE_KEYS.DASHBOARD);
 
@@ -76,8 +76,12 @@ export const StatisticsDashboard = AsyncHandler(async (req, res, next) => {
 });
 
 export const appointmentsChart = AsyncHandler(async (req, res, next) => {
-    // Check Cache
-    const cachedChart = await getCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    const year = Number(req.query.year) || new Date().getFullYear();
+
+    const cacheKey = `${CACHE_KEYS.APPOINTMENTS_CHART}:${year}`;
+
+    // Check Redis Cache
+    const cachedChart = await getCache(cacheKey);
 
     if (cachedChart) {
         return res.status(200).json({
@@ -87,22 +91,23 @@ export const appointmentsChart = AsyncHandler(async (req, res, next) => {
         });
     }
 
-    // Query View
-    const {data, error} = await supabase
-        .from("appointments_by_month")
-        .select("*");
+    // Execute SQL Function
+    const {data, error} = await supabase.rpc("get_appointments_by_month", {
+        selected_year: year,
+    });
 
-    if (!data || error)
+    if (error)
         return next(
             new ApiError("حدث خطأ أثناء جلب بيانات الرسم البياني", 500),
         );
 
     // Save Cache
-    await setCache(CACHE_KEYS.APPOINTMENTS_CHART, data, CACHE_TTL.DASHBOARD);
+    await setCache(cacheKey, data, CACHE_TTL.DASHBOARD);
 
     res.status(200).json({
         status: "success",
         message: "تم جلب البيانات بنجاح",
+        year,
         results: data,
     });
 });

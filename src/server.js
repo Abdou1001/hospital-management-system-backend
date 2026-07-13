@@ -1,5 +1,6 @@
 import "dotenv/config";
 import app from "./app.js";
+import "./config/redis.js";
 
 const PORT = process.env.PORT || 5175
 

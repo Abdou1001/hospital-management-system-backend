@@ -10,17 +10,41 @@ import {
     rollbackUploadedImage,
     uploadAndProcessImage,
 } from "../services/imageUpload.service.js";
+import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
+import {deleteByPattern, getCache, setCache} from "../services/cache.service.js";
 
 // @Desc Get all departments with pagination
 // @Route GET : /api/departments
 // GET /api/department?page=1&limit=10&keyword=الباطنية
 // @Access public
 export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
-    // pageinte
+    // Pagination
     const {page, limit, from, to} = paginate(req);
     const keyword = req.query.keyword || "";
 
-    // query
+    // Cache Key
+    const cacheKey = `departments:page=${page}:limit=${limit}:keyword=${keyword}`;
+
+    // Check Redis Cache
+    const cachedDepartments = await getCache(cacheKey);
+
+    if (cachedDepartments) {
+        cachedDepartments.results.forEach((department) => {
+            department.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DEPARTMENTS,
+                department.path_image,
+            );
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            pagination: cachedDepartments.pagination,
+            results: cachedDepartments.results,
+        });
+    }
+
+    // Query
     const {
         data: departments,
         error,
@@ -32,8 +56,20 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
         .range(from, to)
         .order("depart_name", {ascending: true});
 
-    // error
     if (error) return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
+
+    // Pagination
+    const pagination = paginationResult(page, limit, count);
+
+    // Save Cache
+    await setCache(
+        cacheKey,
+        {
+            pagination,
+            results: departments,
+        },
+        CACHE_TTL.DEPARTMENTS,
+    );
 
     // Add public image url
     departments.forEach((department) => {
@@ -45,26 +81,49 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
 
     res.status(200).json({
         status: "success",
-        message: "تم جلب الاقسام بنجاح",
-        pagination: paginationResult(page, limit, count),
+        message: "تم جلب الأقسام بنجاح",
+        pagination,
         results: departments,
-    })
+    });
 });
 
-// @Desc Get one department
-// @Route GET : /api/departments/:id
-// @Access private (Admin)
 export const getOneDepartmentInfo = AsyncHandler(async (req, res, next) => {
-    const {id} = req.params;
-    // query
-    const {data: department, error} = await supabase
+    const { id } = req.params;
+
+    const cacheKey = CACHE_KEYS.DEPARTMENT(id);
+
+    // Check Redis Cache
+    const cachedDepartment = await getCache(cacheKey);
+
+    if (cachedDepartment) {
+        cachedDepartment.path_image = getPublicImageUrl(
+            STORAGE_BUCKETS.DEPARTMENTS,
+            cachedDepartment.path_image,
+        );
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedDepartment,
+        });
+    }
+
+    // Query
+    const { data: department, error } = await supabase
         .from("department")
         .select("*")
         .eq("depart_id", id)
         .single();
 
-    // error
-    if (!department || error) return next(new ApiError("القسم غير موجود", 404));
+    if (!department || error)
+        return next(new ApiError("القسم غير موجود", 404));
+
+    // Save Cache
+    await setCache(
+        cacheKey,
+        department,
+        CACHE_TTL.DEPARTMENTS,
+    );
 
     // Add public image url
     department.path_image = getPublicImageUrl(
@@ -108,6 +167,9 @@ export const insertDepartment = AsyncHandler(async (req, res, next) => {
                 "حدث خطاء أثناء إضافة القسم، حاول مرة اخرى",
                 400,
             );
+
+        // Delete caching to update data
+        await deleteByPattern("departments:*");
 
         // Add public image url
         department.path_image = getPublicImageUrl(
@@ -188,6 +250,9 @@ export const updatetDepartment = AsyncHandler(async (req, res, next) => {
         },
     });
 
+    // Delete caching to update data
+    await deleteByPattern("departments:*");
+
     // Add public image url
     department.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DEPARTMENTS,
@@ -227,6 +292,9 @@ export const deleteDepartment = AsyncHandler(async (req, res, next) => {
     if (!department || error) return next(new ApiError("القسم غير موجود", 404));
 
     await deleteImage(STORAGE_BUCKETS.DEPARTMENTS, department.path_image);
+
+    // Delete caching to update data
+    await deleteByPattern("departments:*");
 
     res.status(200).json({
         status: "success",

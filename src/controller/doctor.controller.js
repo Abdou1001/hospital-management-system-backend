@@ -4,7 +4,13 @@ import ApiError from "../utils/ApiError.js";
 import {paginate, paginationResult} from "../utils/pagination.js";
 import {getPublicImageUrl} from "../services/storage.service.js";
 import {STORAGE_BUCKETS} from "../config/storage.js";
-import { replaceImage, rollbackUploadedImage, uploadAndProcessImage } from "../services/imageUpload.service.js";
+import {
+    replaceImage,
+    rollbackUploadedImage,
+    uploadAndProcessImage,
+} from "../services/imageUpload.service.js";
+import {deleteByPattern, getCache, setCache} from "../services/cache.service.js";
+import { CACHE_KEYS, CACHE_TTL } from "../config/cache.js";
 
 // @Desc Get all Doctors with pagination, search, filters and sorting
 // @Route GET : /api/doctors/
@@ -21,7 +27,7 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
     // Pagination
     const {page, limit, from, to} = paginate(req);
 
-    // fliters
+    // Filters
     const {
         keyword = "",
         status,
@@ -33,54 +39,68 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
         sort = "full_name",
     } = req.query;
 
+    // Cache Key
+    const cacheKey = `doctors:page=${page}:limit=${limit}:keyword=${keyword}:status=${status || "all"}:gender=${gender || "all"}:minExp=${min_experience || 0}:maxExp=${max_experience || "max"}:minFee=${min_fee || 0}:maxFee=${max_fee || "max"}:sort=${sort}`;
+
+    // Check Redis Cache
+    const cachedDoctors = await getCache(cacheKey);
+
+    if (cachedDoctors) {
+        cachedDoctors.results.forEach((doctor) => {
+            doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                doctor.path_image,
+            );
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            pagination: cachedDoctors.pagination,
+            results: cachedDoctors.results,
+        });
+    }
+
     // Base Query
     let query = supabase
         .from("doctor")
-        .select("*", {
-            count: "exact",
-        })
-        // search
+        .select("*", {count: "exact"})
         .or(
             `full_name.ilike.%${keyword}%,bio.ilike.%${keyword}%,education.ilike.%${keyword}%`,
         );
 
-    // Filter by status
     if (status) query = query.eq("status", status);
 
-    // Filter by gender
     if (gender) query = query.eq("gender", gender);
 
-    // Filter by minimum years experience
     if (min_experience) query = query.gte("years_experience", min_experience);
 
-    // Filter by maximum years experience
     if (max_experience) query = query.lte("years_experience", max_experience);
 
-    // Filter by minimum consultation fee
     if (min_fee) query = query.gte("consultation_fee", min_fee);
 
-    // Filter by maximum consultation fee
     if (max_fee) query = query.lte("consultation_fee", max_fee);
 
-    // Sorting Descending
-    if (sort.startsWith("-")) {
-        query = query.order(sort.substring(1), {
-            ascending: false,
-        });
-    }
-    // Sorting Ascending
-    else {
-        query = query.order(sort, {
-            ascending: true,
-        });
-    }
+    query = query.order(sort.startsWith("-") ? sort.substring(1) : sort, {
+        ascending: !sort.startsWith("-"),
+    });
 
-    // Execute Query
     const {data: doctors, error, count} = await query.range(from, to);
 
-    // Handle Error
     if (error || !doctors)
-        return next(new ApiError("حدث خطأ أثناء جلب الاطباء", 500));
+        return next(new ApiError("حدث خطأ أثناء جلب الأطباء", 500));
+
+    const pagination = paginationResult(page, limit, count);
+
+    // Save Cache
+    await setCache(
+        cacheKey,
+        {
+            pagination,
+            results: doctors,
+        },
+        CACHE_TTL.DOCTORS,
+    );
 
     // Replace image path with public url
     doctors.forEach((doctor) => {
@@ -90,12 +110,10 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
         );
     });
 
-    // Response
     res.status(200).json({
         status: "success",
-        message: "تم جلب الطباء بنجاح",
-
-        pagination: paginationResult(page, limit, count),
+        message: "تم جلب الأطباء بنجاح",
+        pagination,
         results: doctors,
     });
 });
@@ -106,19 +124,39 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
 export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
     const {id} = req.params;
 
-    // query
+    const cacheKey = CACHE_KEYS.DOCTOR(id);
+
+    // Check Redis Cache
+    const cachedDoctor = await getCache(cacheKey);
+
+    if (cachedDoctor) {
+        cachedDoctor.path_image = getPublicImageUrl(
+            STORAGE_BUCKETS.DOCTORS,
+            cachedDoctor.path_image,
+        );
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedDoctor,
+        });
+    }
+
+    // Query
     const {data: doctor, error} = await supabase
         .from("doctor")
         .select("*")
         .eq("doctor_id", id)
         .single();
 
-    // error
+    // Error
     if (!doctor || error)
-        return next(
-            new ApiError("حدث خطاء في جلب الاطبيب، حاول مرة اخرى", 404),
-        );
+        return next(new ApiError("حدث خطأ في جلب الطبيب، حاول مرة أخرى", 404));
 
+    // Save Cache
+    await setCache(cacheKey, doctor, CACHE_TTL.DOCTORS);
+
+    // Add public image url
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
         doctor.path_image,
@@ -130,7 +168,6 @@ export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
         results: doctor,
     });
 });
-
 // @Desc Insert one doctor
 // @Route POST : /api/doctors/
 // @Access private (Admin)
@@ -179,6 +216,9 @@ export const insertDoctor = AsyncHandler(async (req, res, next) => {
                 "حدث خطاء أثناء إضافة الطبيب، حاول مرة اخرى",
                 400,
             );
+
+        // Delete caching to update data
+        await deleteByPattern("doctors:*");
 
         doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
@@ -260,6 +300,9 @@ export const updateDoctor = AsyncHandler(async (req, res, next) => {
         },
     });
 
+    // Delete caching to update data
+    await deleteByPattern("doctors:*");
+
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
         doctor.path_image,
@@ -295,10 +338,13 @@ export const changeDoctorStatus = AsyncHandler(async (req, res, next) => {
         .select("*")
         .single();
 
-        doctor.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DOCTORS,
-            doctor.path_image,
-        );
+    // Delete caching to update data
+    await deleteByPattern("doctors:*");
+
+    doctor.path_image = getPublicImageUrl(
+        STORAGE_BUCKETS.DOCTORS,
+        doctor.path_image,
+    );
 
     res.status(200).json({
         status: "success",
@@ -330,6 +376,8 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
         .select("*")
         .single();
 
+    // Delete caching to update data
+    await deleteByPattern("doctors:*");
 
     doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,

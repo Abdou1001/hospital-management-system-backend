@@ -1,4 +1,5 @@
 import {supabase} from "../config/supabase.js";
+import {redis} from "../config/redis.js";
 import AsyncHandler from "express-async-handler";
 import ApiError from "../utils/ApiError.js";
 
@@ -6,10 +7,31 @@ import {STORAGE_BUCKETS} from "../config/storage.js";
 import {getPublicImageUrl} from "../services/storage.service.js";
 import {replaceImage} from "../services/imageUpload.service.js";
 
+import {getCache, setCache, deleteCache} from "../services/cache.service.js";
+import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
+
+
 // @Desc Get hospital information
 // @Route GET : /api/hospital/
 // @Access Public
 export const getHospitalInfo = AsyncHandler(async (req, res, next) => {
+    // Check Redis Cache
+    const cachedHospital = await getCache(CACHE_KEYS.HOSPITAL);
+
+    if (cachedHospital) {
+        cachedHospital.path_image = getPublicImageUrl(
+            STORAGE_BUCKETS.HOSPITALS,
+            cachedHospital.path_image,
+        );
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedHospital,
+        });
+    }
+    
+    // fetch data from database if no cache
     const {data: hospital, error} = await supabase
         .from("hospital")
         .select("*")
@@ -19,6 +41,8 @@ export const getHospitalInfo = AsyncHandler(async (req, res, next) => {
         return next(
             new ApiError("حدث خطأ أثناء جلب البيانات، حاول مرة أخرى", 500),
         );
+
+    await setCache(CACHE_KEYS.HOSPITAL, hospital, CACHE_TTL.HOSPITAL);
 
     // Add public image url
     hospital.path_image = getPublicImageUrl(
@@ -81,6 +105,9 @@ export const updateHospitalInfo = AsyncHandler(async (req, res, next) => {
             return data;
         },
     });
+
+    // Delete caching to update data
+    await deleteCache(CACHE_KEYS.HOSPITAL);
 
     // Add public image url
     hospital.path_image = getPublicImageUrl(

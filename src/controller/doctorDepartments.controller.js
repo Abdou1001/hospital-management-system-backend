@@ -4,6 +4,12 @@ import ApiError from "../utils/ApiError.js";
 import {paginate, paginationResult} from "../utils/pagination.js";
 import {getPublicImageUrl} from "../services/storage.service.js";
 import {STORAGE_BUCKETS} from "../config/storage.js";
+import {
+    deleteByPattern,
+    getCache,
+    setCache,
+} from "../services/cache.service.js";
+import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
 
 const selectStatment = `doctor_deprtment_id,doctor (*),department (*)`;
 
@@ -20,6 +26,32 @@ export const getDoctorDepartmentsInfo = AsyncHandler(async (req, res, next) => {
 
     // Filters
     const {keyword = "", sort = "doctor_deprtment_id"} = req.query;
+
+    const cacheKey = `doctor-departments:page=${page}:limit=${limit}:keyword=${keyword}:sort=${sort}`;
+
+    // Check Redis Cache
+    const cachedRelations = await getCache(cacheKey);
+
+    if (cachedRelations) {
+        cachedRelations.results.forEach((relation) => {
+            relation.doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                relation.doctor.path_image,
+            );
+
+            relation.department.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DEPARTMENTS,
+                relation.department.path_image,
+            );
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            pagination: cachedRelations.pagination,
+            results: cachedRelations.results,
+        });
+    }
 
     // Base Query
     let query = supabase.from("doctor_department").select(selectStatment, {
@@ -78,6 +110,17 @@ export const getDoctorDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     if (!relations || error)
         return next(new ApiError("حدث خطأ أثناء جلب البيانات", 500));
 
+    const pagination = paginationResult(page, limit, count);
+
+    await setCache(
+        cacheKey,
+        {
+            pagination,
+            results: relations,
+        },
+        CACHE_TTL.DOCTORS,
+    );
+
     // Replace image path with public url
     relations.forEach((relation) => {
         relation.doctor.path_image = getPublicImageUrl(
@@ -95,9 +138,7 @@ export const getDoctorDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     res.status(200).json({
         status: "success",
         message: "تم جلب البيانات بنجاح",
-
-        pagination: paginationResult(page, limit, count),
-
+        pagination,
         results: relations,
     });
 });
@@ -109,15 +150,44 @@ export const getOneDoctorDepartmentInfo = AsyncHandler(
     async (req, res, next) => {
         const {id} = req.params;
 
+        const cacheKey = CACHE_KEYS.DOCTOR_DEPARTMENT(id);
+
+        // Check Redis Cache
+        const cachedRelation = await getCache(cacheKey);
+
+        if (cachedRelation) {
+            cachedRelation.doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                cachedRelation.doctor.path_image,
+            );
+
+            cachedRelation.department.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DEPARTMENTS,
+                cachedRelation.department.path_image,
+            );
+
+            return res.status(200).json({
+                status: "success",
+                message: "تم جلب البيانات من Redis",
+                results: cachedRelation,
+            });
+        }
+
+        // Query
         const {data: relation, error} = await supabase
             .from("doctor_department")
             .select(selectStatment)
             .eq("doctor_deprtment_id", id)
             .single();
 
+        // Error
         if (!relation || error)
             return next(new ApiError("علاقة الدكتور بالقسم غير موجودة", 404));
 
+        // Save Cache
+        await setCache(cacheKey, relation, CACHE_TTL.DOCTOR_DEPARTMENTS);
+
+        // Replace image path with public url
         relation.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
             relation.doctor.path_image,
@@ -192,6 +262,8 @@ export const assignDoctorToDepartment = AsyncHandler(async (req, res, next) => {
 
     if (!assign || error)
         return next(new ApiError("حدث خطأ أثناء ربط الدكتور بالقسم", 400));
+
+    await deleteByPattern("doctor-departments:*");
 
     assign.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
@@ -294,6 +366,8 @@ export const updateDoctorDepartment = AsyncHandler(async (req, res, next) => {
     if (!updatedRelation || updateError)
         return next(new ApiError("حدث خطأ أثناء تعديل العلاقة", 400));
 
+    await deleteByPattern("doctor-departments:*");
+
     updatedRelation.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
         updatedRelation.doctor.path_image,
@@ -342,6 +416,8 @@ export const deleteDoctorFromDepartment = AsyncHandler(
         if (!deleteRelation || deleteError)
             return next(new ApiError("حدث خطأ أثناء حذف العلاقة", 400));
 
+        await deleteByPattern("doctor-departments:*");
+
         res.status(200).json({
             status: "success",
 
@@ -357,6 +433,31 @@ export const deleteDoctorFromDepartment = AsyncHandler(
 // @Access Public
 export const getDoctorsByDepartment = AsyncHandler(async (req, res, next) => {
     const {id} = req.params;
+
+    const cacheKey = `department:${id}:doctors`;
+
+    // Check Redis Cache
+    const cachedDoctors = await getCache(cacheKey);
+
+    if (cachedDoctors) {
+        cachedDoctors.forEach((doctor) => {
+            doctor.doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                doctor.doctor.path_image,
+            );
+
+            doctor.department.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DEPARTMENTS,
+                doctor.department.path_image,
+            );
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedDoctors,
+        });
+    }
 
     // Check Department
     const {data: department, error: departmentError} = await supabase
@@ -377,6 +478,10 @@ export const getDoctorsByDepartment = AsyncHandler(async (req, res, next) => {
     if (!doctors || error)
         return next(new ApiError("حدث خطأ أثناء جلب الدكاترة", 500));
 
+    // Save Cache
+    await setCache(cacheKey, doctors, CACHE_TTL.DOCTOR_DEPARTMENTS);
+
+    // Replace image path with public url
     doctors.forEach((doctor) => {
         doctor.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
@@ -395,11 +500,37 @@ export const getDoctorsByDepartment = AsyncHandler(async (req, res, next) => {
         results: doctors,
     });
 });
+
 // @Desc Get Departments By Doctor
 // @Route GET : /api/doctor-departments/doctor/:id
 // @Access Public
 export const getDepartmentsByDoctor = AsyncHandler(async (req, res, next) => {
     const {id} = req.params;
+
+    const cacheKey = `doctor:${id}:departments`;
+
+    // Check Redis Cache
+    const cachedDepartments = await getCache(cacheKey);
+
+    if (cachedDepartments) {
+        cachedDepartments.forEach((department) => {
+            department.doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                department.doctor.path_image,
+            );
+
+            department.department.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DEPARTMENTS,
+                department.department.path_image,
+            );
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message: "تم جلب البيانات من Redis",
+            results: cachedDepartments,
+        });
+    }
 
     // Check Doctor
     const {data: doctor, error: doctorError} = await supabase
@@ -420,6 +551,10 @@ export const getDepartmentsByDoctor = AsyncHandler(async (req, res, next) => {
     if (!departments || error)
         return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
 
+    // Save Cache
+    await setCache(cacheKey, departments, CACHE_TTL.DOCTOR_DEPARTMENTS);
+
+    // Replace image path with public url
     departments.forEach((department) => {
         department.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
@@ -435,7 +570,6 @@ export const getDepartmentsByDoctor = AsyncHandler(async (req, res, next) => {
     res.status(200).json({
         status: "success",
         message: "تم جلب البيانات بنجاح",
-
         results: departments,
     });
 });

@@ -12,7 +12,7 @@ export const insertDepartmentSchema = z
                 required_error: "اسم القسم مطلوب",
             })
             .min(2, "اسم القسم قصير جدًا")
-            .max(20, "اسم القسم طويل جدًا"),
+            .max(40, "اسم القسم طويل جدًا"),
     })
 
     .superRefine(async (data, ctx) => {
@@ -41,6 +41,6 @@ export const updateDepartmentSchema = z
         depart_name: z
             .string()
             .min(2, "اسم القسم قصير جدًا")
-            .max(20, "اسم القسم طويل جدًا")
+            .max(40, "اسم القسم طويل جدًا")
             .optional(),
     })

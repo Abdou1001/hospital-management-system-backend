@@ -5,13 +5,9 @@ import {z} from "zod";
 ========================= */
 
 const adFields = {
-    start_date: z.string({
-        required_error: "تاريخ بداية الإعلان مطلوب",
-    }),
+    start_date: z.string( "تاريخ بداية الإعلان مطلوب"),
 
-    end_date: z.string({
-        required_error: "تاريخ انتهاء الإعلان مطلوب",
-    }),
+    end_date: z.string("تاريخ انتهاء الإعلان مطلوب"),
 };
 
 const validateDates = (data) =>

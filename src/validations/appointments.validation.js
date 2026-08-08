@@ -8,37 +8,29 @@ import {z} from "zod";
 
 const appointmentObject = z.object({
     schedule_id: z.coerce
-        .number({
-            required_error: "الدوام مطلوب",
-        })
+        .number("الدوام مطلوب")
         .int("معرف الدوام غير صالح")
         .positive("معرف الدوام غير صالح"),
 
     patient_name: z
-        .string({
-            required_error: "اسم المريض مطلوب",
-        })
+        .string( "اسم المريض مطلوب")
         .trim()
         .min(3, "اسم المريض قصير جدًا")
         .max(100, "اسم المريض طويل جدًا"),
 
     patient_phone: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string( "رقم الهاتف مطلوب")
         .trim()
         .regex(/^[0-9]{6,15}$/, "رقم الهاتف غير صالح"),
 
     patient_age: z.coerce
-        .number({
-            required_error: "العمر مطلوب",
-        })
+        .number( "العمر مطلوب")
         .int("العمر غير صالح")
         .min(1, "العمر غير صالح")
         .max(120, "العمر غير صالح"),
 
-    patient_gender: z.enum(["ذكر", "انثى"], {
-        errorMap: () => ({
+    patient_gender: z.enum(["ذكر", "أنثى"], {
+        error: () => ({
             message: "الجنس غير صالح",
         }),
     }),
@@ -46,9 +38,7 @@ const appointmentObject = z.object({
     notes: z.string().trim().max(500, "الملاحظات طويلة جدًا").optional(),
 
     appointment_date: z
-        .string({
-            required_error: "تاريخ الموعد مطلوب",
-        })
+        .string( "تاريخ الموعد مطلوب")
         .regex(/^\d{4}-\d{2}-\d{2}$/, "صيغة التاريخ غير صحيحة"),
 });
 
@@ -127,7 +117,7 @@ export const updateAppointmentSchema = appointmentObject
 
 export const changeAppointmentsStatusSchema = z.object({
     status: z.enum(["pending", "approved", "rejected", "cancelled"], {
-        errorMap: () => ({
+        error: () => ({
             message: "حالة الحجز غير صالحة",
         }),
     }),

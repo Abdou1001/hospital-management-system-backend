@@ -110,7 +110,14 @@ export const login = AsyncHandler(async (req, res, next) => {
 // @Access Public
 export const register = AsyncHandler(async (req, res, next) => {
     // Destructuring
-    const {full_name, email, password, age, gender, phone_number} = req.body;
+    const {
+        full_name,
+        email,
+        password,
+        date_of_birth,
+        gender,
+        phone_number,
+    } = req.body;
 
     // Normalize phone number
     const phone = normalizeYemenPhone(phone_number);
@@ -120,14 +127,18 @@ export const register = AsyncHandler(async (req, res, next) => {
         .from("user")
         .select("*")
         .eq("phone_number", phone)
-        .single();
+        .maybeSingle();
 
     if (existingUser) {
         // Account already verified
-        if (existingUser.phone_verified)
+        if (existingUser.phone_verified) {
             return next(
-                new ApiError("رقم الهاتف مسجل بالفعل، يمكنك تسجيل الدخول", 409),
+                new ApiError(
+                    "رقم الهاتف مسجل بالفعل، يمكنك تسجيل الدخول",
+                    409,
+                ),
             );
+        }
 
         // Generate OTP
         const {otp, hashedOTP, expires} = generateOTPData();
@@ -141,8 +152,11 @@ export const register = AsyncHandler(async (req, res, next) => {
             })
             .eq("user_id", existingUser.user_id);
 
-        if (updateError)
-            return next(new ApiError("حدث خطأ أثناء إنشاء رمز التحقق", 500));
+        if (updateError) {
+            return next(
+                new ApiError("حدث خطأ أثناء إنشاء رمز التحقق", 500),
+            );
+        }
 
         // Send WhatsApp OTP
         await sendOTP(phone, otp);
@@ -151,7 +165,8 @@ export const register = AsyncHandler(async (req, res, next) => {
 
         return res.status(200).json({
             status: "success",
-            message: "الحساب غير مفعل، تم إرسال رمز تحقق جديد إلى رقم هاتفك",
+            message:
+                "الحساب غير مفعل، تم إرسال رمز تحقق جديد إلى رقم هاتفك",
         });
     }
 
@@ -169,7 +184,8 @@ export const register = AsyncHandler(async (req, res, next) => {
                 full_name,
                 email: email || null,
                 password: hashedPassword,
-                age,
+
+                date_of_birth,
                 gender,
 
                 phone_number: phone,
@@ -178,8 +194,8 @@ export const register = AsyncHandler(async (req, res, next) => {
                 phone_otp_expires: expires,
 
                 role: "user",
-                created_at: new Date(),
                 is_active: "active",
+                created_at: new Date(),
             },
         ])
         .select("*")
@@ -187,14 +203,20 @@ export const register = AsyncHandler(async (req, res, next) => {
 
     // Handle DB error
     if (error) {
-        console.log(error);
+        console.error(error);
+
         return next(
-            new ApiError("حدث خطأ أثناء إنشاء الحساب، حاول مرة أخرى", 400),
+            new ApiError(
+                "حدث خطأ أثناء إنشاء الحساب، حاول مرة أخرى",
+                400,
+            ),
         );
     }
 
     // Send WhatsApp OTP
     await sendOTP(phone, otp);
+
+    console.log(otp);
 
     res.status(201).json({
         status: "success",
@@ -332,6 +354,59 @@ export const logout = AsyncHandler(async (req, res) => {
         status: "success",
         message: "تم تسجيل الخروج بنجاح",
     });
+});
+
+// @Desc Get current logged in user
+// @Route GET : /api/auth/me
+// @Access Private
+export const getMe = AsyncHandler(async (req, res, next) => {
+
+    // Get current user
+    const {data: user, error} = await supabase
+
+        .from("user")
+
+        .select(
+            `
+            user_id,
+            full_name,
+            email,
+            date_of_birth,
+            gender,
+            phone_number,
+            role,
+            is_active,
+            created_at
+        `,
+        )
+
+        .eq("user_id", req.user.user_id)
+
+        .single();
+
+
+    // User not found
+    if (!user || error)
+
+        return next(
+            new ApiError(
+                "المستخدم غير موجود",
+                404
+            )
+        );
+
+
+    // Response
+    res.status(200).json({
+
+        status: "success",
+
+        message: "تم جلب بيانات المستخدم بنجاح",
+
+        user,
+
+    });
+
 });
 
 // ============ Change Phone Number to New One =============

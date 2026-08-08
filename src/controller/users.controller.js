@@ -5,7 +5,7 @@ import { paginate, paginationResult } from "../utils/pagination.js";
 import bcrypt from "bcrypt";
 
 
-const selectedColumns = `user_id,full_name,email,role,age,gender,phone_number,created_at,is_active`;
+const selectedColumns = `user_id,full_name,email,role,date_of_birth,gender,phone_number,created_at,is_active`;
 
 // @Desc Get all users
 // @Route GET : /api/users
@@ -141,51 +141,41 @@ export const getOneUserInfo = AsyncHandler(async (req, res, next) => {
 // @Route PUT : /api/users/:id
 // @Access Private (Admin)
 export const updateUser = AsyncHandler(async (req, res, next) => {
-
     const { id } = req.params;
 
     const {
         full_name,
-        age,
+        date_of_birth,
         gender,
-        emali
+        email,
     } = req.body;
 
     const { data: user, error } = await supabase
         .from("user")
-
         .update({
             full_name,
-            age,
+            date_of_birth,
             gender,
-            emali
+            email,
         })
-
-        .eq(
-            "user_id",
-            id
-        )
-
+        .eq("user_id", id)
         .select(selectedColumns)
-
         .single();
 
-
-    if (!user || error)
+    if (error || !user) {
         return next(
             new ApiError(
                 "حدث خطأ أثناء تحديث المستخدم",
-                400
-            )
+                400,
+            ),
         );
+    }
 
     res.status(200).json({
         status: "success",
         message: "تم تعديل البيانات بنجاح",
-
         results: user,
     });
-
 });
 
 
@@ -367,12 +357,7 @@ export const getMyProfile = AsyncHandler(async (req, res, next) => {
 // @Access Private
 export const updateMyProfile = AsyncHandler(async (req, res, next) => {
 
-    const {
-        full_name,
-        age,
-        gender,
-        emali
-    } = req.body;
+    const {full_name, date_of_birth, gender, emali} = req.body;
 
     const {data: user, error} = await supabase
 
@@ -380,7 +365,7 @@ export const updateMyProfile = AsyncHandler(async (req, res, next) => {
 
         .update({
             full_name,
-            age,
+            date_of_birth,
             gender,
             emali,
         })

@@ -12,6 +12,7 @@ export const CACHE_KEYS = {
 
     // Doctor Schedules
     DOCTOR_SCHEDULES: "doctor-schedules",
+    DOCTOR_SCHEDULE: (id) => `doctor-schedule:${id}`,
 
     // Doctor & Department Relations
     DOCTOR_DEPARTMENT: (id) => `doctor-department:${id}`,

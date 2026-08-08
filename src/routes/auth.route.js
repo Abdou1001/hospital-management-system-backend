@@ -2,6 +2,7 @@ import express from "express";
 import {
     changePhoneNumber,
     forgetPassword,
+    getMe,
     login,
     logout,
     register,
@@ -34,7 +35,7 @@ import {protect} from "../middlewares/auth.middleware.js";
 const router = express.Router();
 
 // Login
-router.post("/login", authRateLimit, validate(loginSchema), login);
+router.post("/login", validate(loginSchema), login);
 
 // Register
 router.post("/register", authRateLimit, validate(registerSchema), register);
@@ -52,6 +53,8 @@ router.post("/resend-otp", otpRateLimit, resendOTP);
 
 // Logout
 router.post("/logout", logout);
+
+router.get("/me", protect, getMe);
 
 // Change Phone Number
 router.post(

@@ -5,9 +5,11 @@ import {paginate, paginationResult} from "../utils/pagination.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
 import {getCache, setCache} from "../services/cache.service.js";
 
-// @Desc Get Statistics Dashboard (Number of Users, Number of Doctors, Number of Deparments
-//  Number of Ads, Number of Appointments)
-// @Route GET : /api/ads
+const platform_fee_ = Number(process.env.PLATFORM_FEE);
+
+
+// @Desc Get Statistics Dashboard
+// @Route GET : /api/dashboard/statistics
 // @Access Private (Admin)
 export const statisticsDashboard = AsyncHandler(async (req, res, next) => {
     // Check Redis Cache
@@ -21,51 +23,277 @@ export const statisticsDashboard = AsyncHandler(async (req, res, next) => {
         });
     }
 
+    // First day of current month
+    const firstDayOfMonth = new Date();
+    firstDayOfMonth.setDate(1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
+
+    const firstDay = firstDayOfMonth.toISOString();
+
     // Execute Queries
     const [
         {count: numberUsers, error: userError},
+
         {count: numberDoctors, error: doctorError},
+
         {count: numberDepartments, error: departmentError},
+
         {count: numberAds, error: adsError},
+
+        // All appointments
         {count: numberAppointments, error: appointmentError},
+
+        // All approved appointments
+        {count: acceptedAppointments, error: acceptedError},
+
+        // Pending appointments
+        {count: pendingAppointments, error: pendingError},
+
+        // Rejected appointments
+        {count: rejectedAppointments, error: rejectedError},
+
+        // Cancelled appointments
+        {count: cancelledAppointments, error: cancelledError},
+
+        // All appointments this month
+        {
+            count: appointmentsThisMonth,
+            error: monthAppointmentsError,
+        },
+
+        // Approved appointments this month
+        {
+            count: acceptedAppointmentsThisMonth,
+            error: acceptedThisMonthError,
+        },
     ] = await Promise.all([
-        supabase.from("user").select("*", {count: "exact", head: true}),
+        // Users
+        supabase
+            .from("user")
+            .select("*", {
+                count: "exact",
+                head: true,
+            }),
 
-        supabase.from("doctor").select("*", {count: "exact", head: true}),
+        // Doctors
+        supabase
+            .from("doctor")
+            .select("*", {
+                count: "exact",
+                head: true,
+            }),
 
-        supabase.from("department").select("*", {count: "exact", head: true}),
+        // Departments
+        supabase
+            .from("department")
+            .select("*", {
+                count: "exact",
+                head: true,
+            }),
 
-        supabase.from("ads").select("*", {count: "exact", head: true}),
+        // Ads
+        supabase
+            .from("ads")
+            .select("*", {
+                count: "exact",
+                head: true,
+            }),
 
-        supabase.from("appointment").select("*", {count: "exact", head: true}),
+        // All appointments
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            }),
+
+        // Approved appointments
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .eq("status", "approved"),
+
+        // Pending appointments
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .eq("status", "pending"),
+
+        // Rejected appointments
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .eq("status", "rejected"),
+
+        // Cancelled appointments
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .eq("status", "cancelled"),
+
+        // All appointments this month
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .gte("created_at", firstDay),
+
+        // Approved appointments this month
+        supabase
+            .from("appointment")
+            .select("*", {
+                count: "exact",
+                head: true,
+            })
+            .eq("status", "approved")
+            .gte("created_at", firstDay),
     ]);
 
     // Handle Errors
     if (userError)
-        return next(new ApiError("حدث خطأ أثناء جلب عدد المستخدمين", 500));
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب عدد المستخدمين",
+                500,
+            ),
+        );
 
     if (doctorError)
-        return next(new ApiError("حدث خطأ أثناء جلب عدد الأطباء", 500));
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب عدد الأطباء",
+                500,
+            ),
+        );
 
     if (departmentError)
-        return next(new ApiError("حدث خطأ أثناء جلب عدد الأقسام", 500));
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب عدد الأقسام",
+                500,
+            ),
+        );
 
     if (adsError)
-        return next(new ApiError("حدث خطأ أثناء جلب عدد الإعلانات", 500));
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب عدد الإعلانات",
+                500,
+            ),
+        );
 
     if (appointmentError)
-        return next(new ApiError("حدث خطأ أثناء جلب عدد الحجوزات", 500));
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب عدد الحجوزات",
+                500,
+            ),
+        );
+
+    if (acceptedError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب الحجوزات المقبولة",
+                500,
+            ),
+        );
+
+    if (pendingError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب الحجوزات قيد المراجعة",
+                500,
+            ),
+        );
+
+    if (rejectedError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب الحجوزات المرفوضة",
+                500,
+            ),
+        );
+
+    if (cancelledError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب الحجوزات الملغية",
+                500,
+            ),
+        );
+
+    if (monthAppointmentsError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب حجوزات هذا الشهر",
+                500,
+            ),
+        );
+
+    if (acceptedThisMonthError)
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء جلب الحجوزات المقبولة لهذا الشهر",
+                500,
+            ),
+        );
+
+    // =========================
+    // Revenue
+    // =========================
+
+    // Total revenue from ALL approved appointments
+    const totalRevenue =
+        (acceptedAppointments || 0) * platform_fee_;
+
+    // Monthly revenue from ONLY approved appointments this month
+    const monthlyRevenue =
+        (acceptedAppointmentsThisMonth || 0) * platform_fee_;
+
+    // =========================
+    // Statistics
+    // =========================
 
     const statistics = {
         numberUsers,
         numberDoctors,
         numberDepartments,
         numberAds,
+
         numberAppointments,
+
+        acceptedAppointments,
+        pendingAppointments,
+        rejectedAppointments,
+        cancelledAppointments,
+
+        appointmentsThisMonth,
+        acceptedAppointmentsThisMonth,
+
+        totalRevenue,
+        monthlyRevenue,
     };
 
     // Save Redis Cache
-    await setCache(CACHE_KEYS.DASHBOARD, statistics, CACHE_TTL.DASHBOARD);
+    await setCache(
+        CACHE_KEYS.DASHBOARD,
+        statistics,
+        CACHE_TTL.DASHBOARD,
+    );
 
     // Response
     res.status(200).json({
@@ -80,18 +308,23 @@ export const appointmentsChart = AsyncHandler(async (req, res, next) => {
 
     const cacheKey = `${CACHE_KEYS.APPOINTMENTS_CHART}:${year}`;
 
+    // ============================
     // Check Redis Cache
+    // ============================
     const cachedChart = await getCache(cacheKey);
 
     if (cachedChart) {
         return res.status(200).json({
             status: "success",
             message: "تم جلب البيانات من Redis",
-            results: cachedChart,
+            year,
+            ...cachedChart,
         });
     }
 
-    // Execute SQL Function
+    // ============================
+    // Get chart data
+    // ============================
     const {data, error} = await supabase.rpc("get_appointments_by_month", {
         selected_year: year,
     });
@@ -101,13 +334,51 @@ export const appointmentsChart = AsyncHandler(async (req, res, next) => {
             new ApiError("حدث خطأ أثناء جلب بيانات الرسم البياني", 500),
         );
 
-    // Save Cache
-    await setCache(cacheKey, data, CACHE_TTL.DASHBOARD);
+    // ============================
+    // Calculate growth
+    // ============================
+    const currentMonth = new Date().getMonth() + 1;
 
+    const currentMonthAppointments =
+        data.find((item) => item.month_number === currentMonth)?.total ?? 0;
+
+    const previousMonthAppointments =
+        data.find((item) => item.month_number === currentMonth - 1)?.total ?? 0;
+
+    let growth = 0;
+
+    if (previousMonthAppointments > 0) {
+        growth = Number(
+            (
+                ((currentMonthAppointments - previousMonthAppointments) /
+                    previousMonthAppointments) *
+                100
+            ).toFixed(1),
+        );
+    }
+
+    const response = {
+        results: data,
+
+        statistics: {
+            currentMonthAppointments,
+            previousMonthAppointments,
+            growth,
+        },
+    };
+
+    // ============================
+    // Save Redis Cache
+    // ============================
+    await setCache(cacheKey, response, CACHE_TTL.DASHBOARD);
+
+    // ============================
+    // Response
+    // ============================
     res.status(200).json({
         status: "success",
         message: "تم جلب البيانات بنجاح",
         year,
-        results: data,
+        ...response,
     });
 });

@@ -17,10 +17,12 @@ import {
     setCache,
 } from "../services/cache.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
-// @Desc Get all ads with pagination, filters and sorting
+
+// @Desc Get all ads with pagination, filters, search and sorting
 // @Route GET : /api/ads
 // Examples:
 // GET /api/ads?page=1&limit=10
+// GET /api/ads?keyword=2026
 // GET /api/ads?status=active
 // GET /api/ads?expired=true
 // GET /api/ads?sort=-created_at
@@ -30,12 +32,19 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     const {page, limit, from, to} = paginate(req);
 
     // Filters
-    const {status, expired, sort = "-created_at"} = req.query;
+    const {
+        keyword,
+        status,
+        expired,
+        sort = "-created_at",
+    } = req.query;
 
     const today = new Date().toISOString().split("T")[0];
 
     // Cache Key
-    const cacheKey = `ads:page=${page}:limit=${limit}:status=${status || "all"}:expired=${expired || "all"}:sort=${sort}`;
+    const cacheKey = `ads:page=${page}:limit=${limit}:keyword=${
+        keyword || "all"
+    }:status=${status || "all"}:expired=${expired || "all"}:sort=${sort}`;
 
     // Check Redis Cache
     const cachedAds = await getCache(cacheKey);
@@ -57,7 +66,16 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Base Query
-    let query = supabase.from("ads").select("*", {count: "exact"});
+    let query = supabase
+        .from("ads")
+        .select("*", {count: "exact"});
+
+    // Search
+    if (keyword) {
+        query = query.or(
+            `start_date.ilike.%${keyword}%,end_date.ilike.%${keyword}%`,
+        );
+    }
 
     // Filter by status
     if (status) {
@@ -75,14 +93,17 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Sorting
-    query = query.order(sort.startsWith("-") ? sort.substring(1) : sort, {
-        ascending: !sort.startsWith("-"),
-    });
+    query = query.order(
+        sort.startsWith("-") ? sort.substring(1) : sort,
+        {
+            ascending: !sort.startsWith("-"),
+        },
+    );
 
     // Execute Query
     const {data: ads, error, count} = await query.range(from, to);
 
-    if (!ads || error) {
+    if (error || !ads) {
         return next(new ApiError("حدث خطأ أثناء جلب الإعلانات", 500));
     }
 
@@ -98,9 +119,12 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
         CACHE_TTL.ADS,
     );
 
-    // Add public image url
+    // Add Public Image URL
     ads.forEach((ad) => {
-        ad.image_url = getPublicImageUrl(STORAGE_BUCKETS.ADS, ad.path_image);
+        ad.image_url = getPublicImageUrl(
+            STORAGE_BUCKETS.ADS,
+            ad.path_image,
+        );
     });
 
     res.status(200).json({
@@ -258,6 +282,7 @@ export const updateAd = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.AD(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add public image url
@@ -344,6 +369,7 @@ export const toggleAdStatus = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.AD(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add image url

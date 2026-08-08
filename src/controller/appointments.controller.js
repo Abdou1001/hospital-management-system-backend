@@ -15,9 +15,27 @@ import {
 import {deleteCache} from "../services/cache.service.js";
 import {CACHE_KEYS} from "../config/cache.js";
 
-const platform_fee_ = 500;
-const selectStatment = `*,doctor (doctor_id,full_name,path_image),user (user_id,full_name,email,phone_number,age,gender)`;
-
+const platform_fee_ = Number(process.env.PLATFORM_FEE);
+const selectStatment = `
+    *,
+    doctor_schedule (
+        schedule_id,
+        doctor_id,
+        doctor (
+            doctor_id,
+            full_name,
+            path_image
+        )
+    ),
+    user (
+        user_id,
+        full_name,
+        email,
+        phone_number,
+        date_of_birth,
+        gender
+    )
+`;
 // @Desc Get all appointments with pagination, search, filters and sorting
 // @Route GET : /api/appointments
 // Examples:
@@ -124,10 +142,12 @@ export const getAppointmentsInfo = AsyncHandler(async (req, res, next) => {
 
     // Replace image paths
     for (const appointment of appoint) {
-        appointment.doctor.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DOCTORS,
-            appointment.doctor.path_image,
-        );
+        if (appointment.doctor_schedule?.doctor?.path_image) {
+            appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                appointment.doctor_schedule.doctor.path_image,
+            );
+        }
 
         if (appointment.payment_receipt) {
             try {
@@ -170,10 +190,10 @@ export const getOneAppointmentInfo = AsyncHandler(async (req, res, next) => {
     if (!appoint || error)
         return next(new ApiError("الحجز غير موجود، حاول مرة اخرى", 404));
 
-    if (appoint.doctor?.path_image) {
-        appoint.doctor.path_image = getPublicImageUrl(
+    if (appoint.doctor_schedule?.doctor?.path_image) {
+        appoint.doctor_schedule.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
-            appoint.doctor.path_image,
+            appoint.doctor_schedule.doctor.path_image,
         );
     }
 
@@ -298,10 +318,10 @@ export const getMyAppointments = AsyncHandler(async (req, res, next) => {
 
     // Replace image paths
     for (const appointment of appointments) {
-        if (appointment.doctor?.path_image) {
-            appointment.doctor.path_image = getPublicImageUrl(
+        if (appointment.doctor_schedule?.doctor?.path_image) {
+            appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
                 STORAGE_BUCKETS.DOCTORS,
-                appointment.doctor.path_image,
+                appointment.doctor_schedule.doctor.path_image,
             );
         }
 
@@ -630,10 +650,10 @@ export const updateAppointment = AsyncHandler(async (req, res, next) => {
     await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
-    if (appointment.doctor?.path_image) {
-        appointment.doctor.path_image = getPublicImageUrl(
+    if (appointment.doctor_schedule?.doctor?.path_image) {
+        appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
-            appointment.doctor.path_image,
+            appointment.doctor_schedule.doctor.path_image,
         );
     }
 
@@ -746,13 +766,12 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
     if (!changedAppointment || changeError)
         return next(new ApiError("حدث خطأ أثناء تحديث حالة الحجز", 400));
 
-    if (changedAppointment.doctor?.path_image) {
-        changedAppointment.doctor.path_image = getPublicImageUrl(
+    if (appointment.doctor_schedule?.doctor?.path_image) {
+        appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
             STORAGE_BUCKETS.DOCTORS,
-            changedAppointment.doctor.path_image,
+            appointment.doctor_schedule.doctor.path_image,
         );
     }
-
     if (changedAppointment.payment_receipt) {
         try {
             changedAppointment.payment_receipt = await createSignedImageUrl(

@@ -2,8 +2,8 @@ import rateLimit from "express-rate-limit";
 
 // @Desc Limit authentication requests
 export const authRateLimit = rateLimit({
-    // 15 minutes
-    windowMs: 15 * 60 * 1000,
+    // 10 minutes
+    windowMs: 10 * 60 * 1000,
 
     // Maximum requests
     max: 5,
@@ -11,7 +11,7 @@ export const authRateLimit = rateLimit({
     message: {
         status: "fail",
         message:
-            "تم تجاوز عدد المحاولات المسموح بها، يرجى المحاولة مرة أخرى بعد 15 دقيقة.",
+            "تم تجاوز عدد المحاولات المسموح بها، يرجى المحاولة مرة أخرى بعد 10 دقيقة.",
     },
 
     standardHeaders: true,

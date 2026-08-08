@@ -9,8 +9,13 @@ import {
     rollbackUploadedImage,
     uploadAndProcessImage,
 } from "../services/imageUpload.service.js";
-import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cache.service.js";
-import { CACHE_KEYS, CACHE_TTL } from "../config/cache.js";
+import {
+    deleteByPattern,
+    deleteCache,
+    getCache,
+    setCache,
+} from "../services/cache.service.js";
+import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
 
 // @Desc Get all Doctors with pagination, search, filters and sorting
 // @Route GET : /api/doctors/
@@ -64,32 +69,59 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
     // Base Query
     let query = supabase
         .from("doctor")
-        .select("*", {count: "exact"})
+        .select(
+            `
+            *,
+            doctor_department (
+                doctor_deprtment_id,
+                department (
+                    depart_id,
+                    depart_name,
+                    path_image
+                )
+            ),
+            doctor_schedule (
+                schedule_id,
+                day_of_week,
+                shift_type,
+                start_time,
+                end_time,
+                status,
+                max_patients
+            )
+            `,
+            {count: "exact"},
+        )
         .or(
             `full_name.ilike.%${keyword}%,bio.ilike.%${keyword}%,education.ilike.%${keyword}%`,
         );
 
+    // Filters
     if (status) query = query.eq("status", status);
 
     if (gender) query = query.eq("gender", gender);
 
-    if (min_experience) query = query.gte("years_experience", min_experience);
+    if (min_experience) query = query.gte("years_exper", min_experience);
 
-    if (max_experience) query = query.lte("years_experience", max_experience);
+    if (max_experience) query = query.lte("years_exper", max_experience);
 
     if (min_fee) query = query.gte("consultation_fee", min_fee);
 
     if (max_fee) query = query.lte("consultation_fee", max_fee);
 
+    // Sorting
     query = query.order(sort.startsWith("-") ? sort.substring(1) : sort, {
         ascending: !sort.startsWith("-"),
     });
 
+    // Execute Query
     const {data: doctors, error, count} = await query.range(from, to);
 
-    if (error || !doctors)
+    if (error || !doctors) {
         return next(new ApiError("حدث خطأ أثناء جلب الأطباء", 500));
+    }
 
+    // Pagination
     const pagination = paginationResult(page, limit, count);
 
     // Save Cache
@@ -110,6 +142,7 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
         );
     });
 
+    // Response
     res.status(200).json({
         status: "success",
         message: "تم جلب الأطباء بنجاح",
@@ -145,13 +178,36 @@ export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
     // Query
     const {data: doctor, error} = await supabase
         .from("doctor")
-        .select("*")
+        .select(
+            `
+            *,
+            doctor_department (
+                doctor_deprtment_id,
+                department (
+                    depart_id,
+                    depart_name,
+                    path_image
+                )
+            ),
+            doctor_schedule (
+                schedule_id,
+                day_of_week,
+                shift_type,
+                start_time,
+                end_time,
+                status,
+                max_patients,
+                notes
+            )
+            `,
+        )
         .eq("doctor_id", id)
         .single();
 
     // Error
-    if (!doctor || error)
+    if (!doctor || error) {
         return next(new ApiError("حدث خطأ في جلب الطبيب، حاول مرة أخرى", 404));
+    }
 
     // Save Cache
     await setCache(cacheKey, doctor, CACHE_TTL.DOCTORS);
@@ -162,12 +218,14 @@ export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
         doctor.path_image,
     );
 
+    // Response
     res.status(200).json({
         status: "success",
         message: "تم جلب الطبيب بنجاح",
         results: doctor,
     });
 });
+
 // @Desc Insert one doctor
 // @Route POST : /api/doctors/
 // @Access private (Admin)
@@ -303,6 +361,7 @@ export const updateDoctor = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DOCTOR(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
@@ -342,6 +401,7 @@ export const changeDoctorStatus = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DOCTOR(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
@@ -381,6 +441,7 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
+    await deleteCache(CACHE_KEYS.DOCTOR(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     doctor.path_image = getPublicImageUrl(
@@ -390,7 +451,7 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
 
     res.status(200).json({
         status: "success",
-        message: "تم اخفاء الطبيب بنجاح",
+        message: "تم التغيير الطبيب بنجاح",
         results: updatedDoctor,
     });
 });

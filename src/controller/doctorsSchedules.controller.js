@@ -12,6 +12,17 @@ import {
 } from "../services/cache.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
 
+    // ترتيب أيام الأسبوع
+const daysOrder = {
+    "السبت": 1,
+    "الاحد": 2,
+    "الاثنين": 3,
+    "الثلاثاء": 4,
+    "الاربعاء": 5,
+    "الخميس": 6,
+    "الجمعة": 7,
+};
+
 // @Desc Get all Doctors Schedules Info
 // @Route GET : /api/doctor-schedule
 // Examples:
@@ -74,7 +85,6 @@ export const getDoctorsSchedulesInfo = AsyncHandler(async (req, res, next) => {
 
         const doctorIds = doctors?.map((doctor) => doctor.doctor_id) || [];
 
-        // If there is no result
         if (doctorIds.length === 0) {
             const pagination = paginationResult(page, limit, 0);
 
@@ -121,6 +131,18 @@ export const getDoctorsSchedulesInfo = AsyncHandler(async (req, res, next) => {
     if (!data || error)
         return next(new ApiError("حدث خطأ أثناء جلب الأوقات", 500));
 
+    // ترتيب النتائج حسب أيام الأسبوع ثم وقت البداية
+    data.sort((a, b) => {
+        const dayCompare =
+            daysOrder[a.day_of_week] - daysOrder[b.day_of_week];
+
+        if (dayCompare !== 0) {
+            return dayCompare;
+        }
+
+        return a.start_time.localeCompare(b.start_time);
+    });
+
     const pagination = paginationResult(page, limit, count);
 
     // Save Cache
@@ -153,65 +175,56 @@ export const getDoctorsSchedulesInfo = AsyncHandler(async (req, res, next) => {
 });
 
 // @Desc Get Doctor Schedule Info
-// @Route GET : /api/doctor-schedule
+// @Route GET : /api/doctor-schedule/:id
 // @Access public
 export const getDoctorSchedulesInfo = AsyncHandler(async (req, res, next) => {
     const {id} = req.params;
 
-    const cacheKey = CACHE_KEYS.DOCTOR_DEPARTMENT(id);
+    const cacheKey = CACHE_KEYS.DOCTOR_SCHEDULE(id);
 
-    // Check Redis Cache
-    const cachedRelation = await getCache(cacheKey);
+    const cachedSchedules = await getCache(cacheKey);
 
-    if (cachedRelation) {
-        cachedRelation.doctor.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DOCTORS,
-            cachedRelation.doctor.path_image,
-        );
-
-        cachedRelation.department.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DEPARTMENTS,
-            cachedRelation.department.path_image,
-        );
-
+    if (cachedSchedules) {
         return res.status(200).json({
             status: "success",
             message: "تم جلب البيانات من Redis",
-            results: cachedRelation,
+            results: cachedSchedules,
         });
     }
 
-    // Query
-    const {data: relation, error} = await supabase
-        .from("doctor_department")
-        .select(selectStatment)
-        .eq("doctor_deprtment_id", id)
-        .single();
+    const {data: schedules, error} = await supabase
+        .from("doctor_schedule")
+        .select("*")
+        .eq("doctor_id", id);
 
-    // Error
-    if (!relation || error)
-        return next(new ApiError("علاقة الدكتور بالقسم غير موجودة", 404));
+    if (error)
+        return next(
+            new ApiError("حدث خطأ أثناء جلب أوقات دوام الطبيب", 500),
+        );
 
-    // Save Cache
-    await setCache(cacheKey, relation, CACHE_TTL.DOCTOR_DEPARTMENTS);
+    // ترتيب أيام الأسبوع ثم وقت البداية
+    schedules.sort((a, b) => {
+        const dayCompare =
+            daysOrder[a.day_of_week] - daysOrder[b.day_of_week];
 
-    // Replace image path with public url
-    relation.doctor.path_image = getPublicImageUrl(
-        STORAGE_BUCKETS.DOCTORS,
-        relation.doctor.path_image,
-    );
+        if (dayCompare !== 0) {
+            return dayCompare;
+        }
 
-    relation.department.path_image = getPublicImageUrl(
-        STORAGE_BUCKETS.DEPARTMENTS,
-        relation.department.path_image,
-    );
+        return a.start_time.localeCompare(b.start_time);
+    });
 
-    res.status(200).json({
+    await setCache(cacheKey, schedules, CACHE_TTL.DOCTOR_SCHEDULE);
+
+    return res.status(200).json({
         status: "success",
-        message: "تم جلب البيانات بنجاح",
-        results: relation,
+        message: schedules.length
+            ? "تم جلب أوقات دوام الطبيب بنجاح"
+            : "لا توجد أوقات دوام لهذا الطبيب",
+        results: schedules,
     });
 });
+
 // @Desc Assign Doctor to Schedule
 // @Route POST : /api/doctor-schedules
 // @Access Private (Admin)
@@ -224,24 +237,53 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         doctor_id,
         notes = "",
         max_patients,
+        status,
     } = req.body;
 
-    // Check if doctor exits
+    /* ==========================================
+        Check if doctor exists
+    ========================================== */
     const {data: doctor, error: doctorError} = await supabase
         .from("doctor")
-        .select("doctor_id,status,is_hidden")
+        .select("doctor_id,status,is_hidden,path_image")
         .eq("doctor_id", doctor_id)
         .single();
 
     if (!doctor || doctorError)
         return next(new ApiError("الطبيب غير موجود، حاول مرة اخرى", 404));
 
-    if (doctor.is_hidden) return next(new ApiError("الطبيب غير متاح", 400));
+    if (doctor.is_hidden)
+        return next(new ApiError("الطبيب غير متاح", 400));
 
     if (doctor.status !== "active")
         return next(new ApiError("الطبيب غير مفعل", 400));
 
-    // Assign doctor_schedule
+    /* ==========================================
+        Validate Status
+    ========================================== */
+    if (status && !["active", "inactive"].includes(status))
+        return next(new ApiError("حالة الدوام غير صالحة", 400));
+
+    /* ==========================================
+        Check duplicate schedule
+    ========================================== */
+    const {data: existingSchedule} = await supabase
+        .from("doctor_schedule")
+        .select("schedule_id")
+        .eq("doctor_id", doctor_id)
+        .eq("day_of_week", day_of_week)
+        .eq("start_time", start_time)
+        .eq("end_time", end_time)
+        .maybeSingle();
+
+    if (existingSchedule)
+        return next(
+            new ApiError("يوجد دوام بنفس البيانات لهذا الطبيب", 400),
+        );
+
+    /* ==========================================
+        Create schedule
+    ========================================== */
     const {data: assign, error} = await supabase
         .from("doctor_schedule")
         .insert({
@@ -252,7 +294,7 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
             doctor_id,
             notes,
             max_patients,
-            status: "active",
+            status: status ?? "active",
         })
         .select("*, doctor(*)")
         .single();
@@ -262,15 +304,24 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
             new ApiError("حدث خطأ أثناء إضافة دوام الطبيب، حاول مرة اخرى", 400),
         );
 
+    /* ==========================================
+        Clear Cache
+    ========================================== */
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(doctor_id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
+    /* ==========================================
+        Convert Image
+    ========================================== */
     assign.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
         assign.doctor.path_image,
     );
 
-    // Response
+    /* ==========================================
+        Response
+    ========================================== */
     res.status(201).json({
         status: "success",
         message: "تم إضافة دوام الطبيب بنجاح",
@@ -278,8 +329,8 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     });
 });
 
-// @Desc Update Doctor to Schedule
-// @Route PUT : /api/doctor-schedule
+// @Desc Update Doctor Schedule
+// @Route PUT : /api/doctor-schedule/:id
 // @Access Private (Admin)
 export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     const {
@@ -288,23 +339,28 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         start_time,
         end_time,
         doctor_id,
-        notes,
+        notes = "",
         max_patients,
+        status,
     } = req.body;
 
     const {id} = req.params;
 
-    // Check of Id (Schedule) this exist
+    /* ==========================================
+        Check schedule exists
+    ========================================== */
     const {data: schedule, error: scheduleError} = await supabase
         .from("doctor_schedule")
-        .select("schedule_id")
+        .select("*")
         .eq("schedule_id", id)
         .single();
 
     if (!schedule || scheduleError)
         return next(new ApiError("الدوام غير موجود، حاول مرة اخرى", 404));
 
-    // Check if doctor exits
+    /* ==========================================
+        Check doctor exists
+    ========================================== */
     const {data: doctor, error: doctorError} = await supabase
         .from("doctor")
         .select("doctor_id,status,is_hidden,path_image")
@@ -314,25 +370,44 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     if (!doctor || doctorError)
         return next(new ApiError("الطبيب غير موجود، حاول مرة اخرى", 404));
 
-    if (doctor.is_hidden) return next(new ApiError("الطبيب غير متاح", 400));
+    if (doctor.is_hidden)
+        return next(new ApiError("الطبيب غير متاح", 400));
 
     if (doctor.status !== "active")
         return next(new ApiError("الطبيب غير مفعل", 400));
 
-    const {data: existingSchedule} = await supabase
-        .from("doctor_schedule")
-        .select("schedule_id")
-        .eq("doctor_id", doctor_id)
-        .eq("day_of_week", day_of_week)
-        .eq("start_time", start_time)
-        .eq("end_time", end_time)
-        .neq("schedule_id", id)
-        .single();
+    /* ==========================================
+        Check duplicate only if schedule changed
+    ========================================== */
+    const isChanged =
+        schedule.day_of_week !== day_of_week ||
+        schedule.shift_type !== shift_type ||
+        schedule.start_time !== start_time ||
+        schedule.end_time !== end_time ||
+        schedule.max_patients !== max_patients ||
+        schedule.status !== status ||
+        (schedule.notes ?? "") !== (notes ?? "");
 
-    if (existingSchedule)
-        return next(new ApiError("يوجد دوام بنفس البيانات لهذا الطبيب", 400));
+    if (isChanged) {
+        const {data: existingSchedule} = await supabase
+            .from("doctor_schedule")
+            .select("schedule_id")
+            .eq("doctor_id", doctor_id)
+            .eq("day_of_week", day_of_week)
+            .eq("start_time", start_time)
+            .eq("end_time", end_time)
+            .neq("schedule_id", id)
+            .maybeSingle();
 
-    // Update the schedule
+        if (existingSchedule)
+            return next(
+                new ApiError("يوجد دوام بنفس البيانات لهذا الطبيب", 400),
+            );
+    }
+
+    /* ==========================================
+        Update schedule
+    ========================================== */
     const {data: update, error} = await supabase
         .from("doctor_schedule")
         .update({
@@ -343,6 +418,7 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
             doctor_id,
             notes,
             max_patients,
+            status,
         })
         .eq("schedule_id", id)
         .select("*, doctor(*)")
@@ -350,18 +426,27 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
 
     if (!update || error)
         return next(
-            new ApiError("حدث خطأ أثناء تعديل الدوام حاول مرة اخرى", 400),
+            new ApiError("حدث خطأ أثناء تعديل الدوام، حاول مرة اخرى", 400),
         );
 
+    /* ==========================================
+        Clear Cache
+    ========================================== */
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(update.doctor_id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
+    /* ==========================================
+        Convert image path
+    ========================================== */
     update.doctor.path_image = getPublicImageUrl(
         STORAGE_BUCKETS.DOCTORS,
         update.doctor.path_image,
     );
 
-    // Response
+    /* ==========================================
+        Response
+    ========================================== */
     res.status(200).json({
         status: "success",
         message: "تم تحديث الدوام بنجاح",
@@ -414,6 +499,7 @@ export const deleteDoctorsSchedules = AsyncHandler(async (req, res, next) => {
         );
 
     await deleteByPattern("doctor-schedules:*");
+    await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(deleteSchdule.doctor_id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Response
@@ -461,6 +547,7 @@ export const changeDoctorScheduleStatus = AsyncHandler(
             return next(new ApiError("حدث خطأ أثناء تحديث حالة الدوام", 400));
 
         await deleteByPattern("doctor-schedules:*");
+        await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(updatedSchedule.doctor_id));
         await deleteCache(CACHE_KEYS.DASHBOARD);
 
         // Response

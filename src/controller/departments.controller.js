@@ -15,15 +15,18 @@ import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cach
 
 // @Desc Get all departments with pagination
 // @Route GET : /api/departments
-// GET /api/department?page=1&limit=10&keyword=الباطنية
-// @Access public
+// GET /api/departments?page=1&limit=10&keyword=الباطنية&sort=most_doctors
+// GET /api/departments?page=1&limit=10&keyword=الباطنية&sort=least_doctors
+// @Access Public
 export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     // Pagination
-    const {page, limit, from, to} = paginate(req);
+    const { page, limit, from, to } = paginate(req);
+
     const keyword = req.query.keyword || "";
+    const sort = req.query.sort || "name";
 
     // Cache Key
-    const cacheKey = `departments:page=${page}:limit=${limit}:keyword=${keyword}`;
+    const cacheKey = `departments:page=${page}:limit=${limit}:keyword=${keyword}:sort=${sort}`;
 
     // Check Redis Cache
     const cachedDepartments = await getCache(cacheKey);
@@ -45,21 +48,57 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Query
-    const {
-        data: departments,
-        error,
-        count,
-    } = await supabase
+    let query = supabase
         .from("department")
-        .select("*", {count: "exact"})
-        .ilike("depart_name", `%${keyword}%`)
-        .range(from, to)
-        .order("depart_name", {ascending: true});
+        .select(
+            `
+        *,
+        doctor_department(count)
+    `,
+            {count: "exact"},
+        )
+        .ilike("depart_name", `%${keyword}%`);
 
-    if (error) return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
+
+    const { data: departments, error, count } = await query.range(from, to);
+
+    if (error)
+        return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
+
+    // تجهيز عدد الأطباء
+    departments.forEach((department) => {
+        department.doctors_count =
+            department.doctor_department?.[0]?.count || 0;
+
+        delete department.doctor_department;
+    });
+
+    switch (sort) {
+        case "most_doctors":
+            departments.sort((a, b) => b.doctors_count - a.doctors_count);
+            break;
+
+        case "least_doctors":
+            departments.sort((a, b) => a.doctors_count - b.doctors_count);
+            break;
+
+        default:
+            departments.sort((a, b) =>
+                a.depart_name.localeCompare(b.depart_name, "ar"),
+            );
+    }
 
     // Pagination
     const pagination = paginationResult(page, limit, count);
+
+
+    const results = departments.map((department) => ({
+        ...department,
+        path_image: getPublicImageUrl(
+            STORAGE_BUCKETS.DEPARTMENTS,
+            department.path_image,
+        ),
+    }));
 
     // Save Cache
     await setCache(
@@ -71,22 +110,17 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
         CACHE_TTL.DEPARTMENTS,
     );
 
-    // Add public image url
-    departments.forEach((department) => {
-        department.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DEPARTMENTS,
-            department.path_image,
-        );
-    });
-
     res.status(200).json({
         status: "success",
         message: "تم جلب الأقسام بنجاح",
         pagination,
-        results: departments,
+        results
     });
 });
 
+// @Desc Get department
+// @Route GET : /api/department
+// @Access Public
 export const getOneDepartmentInfo = AsyncHandler(async (req, res, next) => {
     const { id } = req.params;
 
@@ -253,6 +287,7 @@ export const updatetDepartment = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("departments:*");
+    await deleteCache(CACHE_KEYS.DEPARTMENT(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Add public image url

@@ -8,16 +8,12 @@ import {supabase} from "../config/supabase.js";
 
 export const loginSchema = z.object({
     login: z
-        .string({
-            required_error: "رقم الهاتف أو البريد الإلكتروني مطلوب",
-        })
+        .string("رقم الهاتف أو البريد الإلكتروني مطلوب")
         .trim()
         .min(1, "رقم الهاتف أو البريد الإلكتروني مطلوب"),
 
     password: z
-        .string({
-            required_error: "كلمة المرور مطلوبة",
-        })
+        .string("كلمة المرور مطلوبة")
         .min(6, "كلمة المرور يجب أن تكون على الأقل 6 أحرف"),
 });
 
@@ -28,9 +24,7 @@ export const loginSchema = z.object({
 export const registerSchema = z
     .object({
         full_name: z
-            .string({
-                required_error: "الاسم الكامل مطلوب",
-            })
+            .string("الاسم الكامل مطلوب")
             .trim()
             .min(3, "الاسم الكامل قصير جدًا"),
 
@@ -42,27 +36,47 @@ export const registerSchema = z
             .or(z.literal("")),
 
         password: z
-            .string({
-                required_error: "كلمة المرور مطلوبة",
-            })
+            .string("كلمة المرور مطلوبة")
             .min(6, "كلمة المرور يجب أن تكون على الأقل 6 أحرف"),
 
-        confirmPassword: z.string({
-            required_error: "تأكيد كلمة المرور مطلوب",
-        }),
+        confirmPassword: z.string("تأكيد كلمة المرور مطلوب"),
 
         phone_number: z
-            .string({
-                required_error: "رقم الهاتف مطلوب",
-            })
+            .string("رقم الهاتف مطلوب")
             .trim()
             .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 
-        gender: z.enum(["male", "female"], {
-            errorMap: () => ({
+        gender: z.enum(["ذكر", "انثى"], {
+            error: () => ({
                 message: "الجنس غير صالح",
             }),
         }),
+
+        date_of_birth: z.coerce
+            .date({
+                required_error: "تاريخ الميلاد مطلوب",
+                invalid_type_error: "تاريخ الميلاد غير صالح",
+            })
+            .refine(
+                (date) => date <= new Date(),
+                "لا يمكن أن يكون تاريخ الميلاد في المستقبل",
+            )
+            .refine((date) => {
+                const today = new Date();
+
+                let age = today.getFullYear() - date.getFullYear();
+
+                const monthDiff = today.getMonth() - date.getMonth();
+
+                if (
+                    monthDiff < 0 ||
+                    (monthDiff === 0 && today.getDate() < date.getDate())
+                ) {
+                    age--;
+                }
+
+                return age >= 18;
+            }, "يجب ألا يقل العمر عن 18 سنة"),
     })
 
     // Password Confirm
@@ -78,7 +92,7 @@ export const registerSchema = z
             .from("user")
             .select("user_id")
             .eq("phone_number", data.phone_number)
-            .single();
+            .maybeSingle();
 
         if (phoneUser) {
             ctx.addIssue({
@@ -94,7 +108,7 @@ export const registerSchema = z
                 .from("user")
                 .select("user_id")
                 .eq("email", data.email)
-                .single();
+                .maybeSingle();
 
             if (emailUser) {
                 ctx.addIssue({
@@ -112,19 +126,14 @@ export const registerSchema = z
 
 export const verifyPasswordResetCodeSchema = z.object({
     phone_number: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string("رقم الهاتف مطلوب")
         .trim()
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 
     resetCode: z
-        .string({
-            required_error: "الرجاء إدخال رمز التحقق",
-        })
+        .string("الرجاء إدخال رمز التحقق")
         .length(6, "يجب أن يتكون رمز التحقق من 6 أرقام"),
 });
-
 
 /* =========================
    Resend OTPS Validation
@@ -132,9 +141,7 @@ export const verifyPasswordResetCodeSchema = z.object({
 
 export const resendOTPSchema = z.object({
     phone_number: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string( "رقم الهاتف مطلوب")
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 });
 
@@ -144,9 +151,7 @@ export const resendOTPSchema = z.object({
 
 export const changePhoneNumberSchema = z.object({
     phone_number: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string("رقم الهاتف مطلوب")
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 });
 
@@ -156,12 +161,9 @@ export const changePhoneNumberSchema = z.object({
 
 export const verifyChangePhoneNumberSchema = z.object({
     otp: z
-        .string({
-            required_error: "رمز التحقق مطلوب",
-        })
+        .string("رمز التحقق مطلوب")
         .length(6, "رمز التحقق يجب أن يتكون من 6 أرقام"),
 });
-
 
 /* =========================
    Forgot Password Validation
@@ -169,13 +171,10 @@ export const verifyChangePhoneNumberSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
     phone_number: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string("رقم الهاتف مطلوب")
         .trim()
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 });
-
 
 /* =========================
    Verify Reset Code Validation
@@ -183,15 +182,11 @@ export const forgotPasswordSchema = z.object({
 
 export const verifyPhoneOTPSchema = z.object({
     otp: z
-        .string({
-            required_error: "الرجاء إدخال رمز التحقق",
-        })
+        .string("الرجاء إدخال رمز التحقق")
         .length(6, "يجب أن يتكون رمز التحقق من 6 أرقام"),
 
     phone_number: z
-        .string({
-            required_error: "رقم الهاتف مطلوب",
-        })
+        .string("رقم الهاتف مطلوب")
         .trim()
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 });
@@ -203,21 +198,15 @@ export const verifyPhoneOTPSchema = z.object({
 export const resetPasswordSchema = z
     .object({
         phone_number: z
-            .string({
-                required_error: "رقم الهاتف مطلوب",
-            })
+            .string("رقم الهاتف مطلوب")
             .trim()
             .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 
         newPassword: z
-            .string({
-                required_error: "كلمة المرور مطلوبة",
-            })
+            .string("كلمة المرور مطلوبة")
             .min(6, "كلمة المرور يجب أن تكون على الأقل 6 أحرف"),
 
-        confirmPassword: z.string({
-            required_error: "تأكيد كلمة المرور مطلوب",
-        }),
+        confirmPassword: z.string("تأكيد كلمة المرور مطلوب"),
     })
 
     // Password Confirm

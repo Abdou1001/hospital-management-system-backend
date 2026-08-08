@@ -40,7 +40,7 @@ export const protect = AsyncHandler(async (req, res, next) => {
         const passChangeTimestamp = parseInt(new Date(user.password_changed_at).getTime() / 1000, 10);
 
         if (passChangeTimestamp > decoded.iat) {
-            return next(new ApiError("User recently changed his password, plz login again", 401))
+            return next(new ApiError("غيرت كلمة المرور مؤخرا، سجل دخول مره اخرى", 401))
         }
     }
 

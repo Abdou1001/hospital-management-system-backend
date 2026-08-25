@@ -13,7 +13,7 @@ const router = express.Router();
 router
     .get("/", getDepartmentsInfo)
     .post("/", protect, allowedTo("admin"),uploadSingleImage("path_image"), validate(insertDepartmentSchema), insertDepartment)
-    .get("/:id", protect, allowedTo("admin"), getOneDepartmentInfo)
+    .get("/:id", getOneDepartmentInfo)
     .put("/:id", protect, allowedTo("admin"),uploadSingleImage("path_image"), validate(updateDepartmentSchema), updatetDepartment)
     .delete("/:id", protect, allowedTo("admin"), deleteDepartment)
 

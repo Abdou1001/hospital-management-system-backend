@@ -32,3 +32,18 @@ export const otpRateLimit = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// For APIs
+export const apiRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+
+    max: 200,
+
+    standardHeaders: true,
+    legacyHeaders: false,
+
+    message: {
+        status: "fail",
+        message: "طلبات كثيرة جدًا، يرجى المحاولة لاحقًا.",
+    },
+});

@@ -20,6 +20,7 @@ import AppointmentsRoutes from "./routes/appointments.route.js";
 import DoctorDepartmentsRoutes from "./routes/doctorDepartments.route.js";
 import DoctorScheduleRoutes from "./routes/doctorSchedule.route.js";
 import dashboardRouter from "./routes/dashboard.route.js";
+import { apiRateLimit } from "./middlewares/rateLimit.middleware.js";
 
 // .env configurtion
 dotenv.config();
@@ -30,10 +31,10 @@ const app = express();
 // Security Headers
 app.use(helmet());
 
-// Core to send data to front end on port 5173
+// Core to send data to front end on port 3000
 app.use(
     cors({
-        origin: "http://localhost:5173",
+        origin: "http://localhost:3000",
         credentials: true,
     }),
 );
@@ -50,6 +51,8 @@ app.use(cookieParser());
 // compressoin JSON size
 app.use(compression());
 
+// Rate Limit لجميع API
+app.use("/api", apiRateLimit);
 // ========== Routes ============
 // Auth
 app.use("/api/auth", AuthRoutes);

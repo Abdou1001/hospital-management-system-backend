@@ -35,7 +35,7 @@ import {protect} from "../middlewares/auth.middleware.js";
 const router = express.Router();
 
 // Login
-router.post("/login", validate(loginSchema), login);
+router.post("/login", authRateLimit, validate(loginSchema), login);
 
 // Register
 router.post("/register", authRateLimit, validate(registerSchema), register);

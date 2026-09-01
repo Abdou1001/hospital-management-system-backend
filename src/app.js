@@ -21,6 +21,7 @@ import DoctorDepartmentsRoutes from "./routes/doctorDepartments.route.js";
 import DoctorScheduleRoutes from "./routes/doctorSchedule.route.js";
 import dashboardRouter from "./routes/dashboard.route.js";
 import { apiRateLimit } from "./middlewares/rateLimit.middleware.js";
+import bankAccountsRoute from "./routes/bankAccounts.route.js";
 
 // .env configurtion
 dotenv.config();
@@ -72,6 +73,8 @@ app.use("/api/appointments", AppointmentsRoutes);
 app.use("/api/doctor-departments", DoctorDepartmentsRoutes);
 // doctor-departments
 app.use("/api/doctor-schedule", DoctorScheduleRoutes);
+// bank-accounts
+app.use("/api/bank-accounts", bankAccountsRoute);
 // dashboard
 app.use("/api/dashboard", dashboardRouter);
 

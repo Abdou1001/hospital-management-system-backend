@@ -9,6 +9,8 @@ export const STORAGE_BUCKETS = {
 
     ADS: "ad-images",
 
+    BANK_ACCOUNTS: "bank-accounts-images",
+
     // Private Bucket
     PAYMENT_RECEIPTS: "payment-receipts",
 };

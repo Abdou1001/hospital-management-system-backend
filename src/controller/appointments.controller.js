@@ -14,6 +14,7 @@ import {
 } from "../services/imageUpload.service.js";
 import {deleteCache} from "../services/cache.service.js";
 import {CACHE_KEYS} from "../config/cache.js";
+import {sendNotificationToUser} from "../services/notification.service.js";
 
 const platform_fee_ = Number(process.env.PLATFORM_FEE);
 const selectStatment = `
@@ -347,6 +348,149 @@ export const getMyAppointments = AsyncHandler(async (req, res, next) => {
         results: appointments,
     });
 });
+
+// @Desc Get pending appointments for Reception
+// @Route GET : /api/appointments/pending
+// @Access Private (Admin, Reception)
+export const getPendingAppointments = AsyncHandler(
+    async (req, res, next) => {
+        // ========================================================
+        // Search
+        // ========================================================
+
+        const {keyword = ""} = req.query;
+
+        // ========================================================
+        // Get today's date and tomorrow's date
+        // ========================================================
+
+        const now = new Date();
+
+        const today = new Date(
+            Date.UTC(
+                now.getUTCFullYear(),
+                now.getUTCMonth(),
+                now.getUTCDate(),
+            ),
+        );
+
+        const tomorrow = new Date(today);
+
+        tomorrow.setUTCDate(
+            tomorrow.getUTCDate() + 1,
+        );
+
+        const todayDate = today
+            .toISOString()
+            .split("T")[0];
+
+        const tomorrowDate = tomorrow
+            .toISOString()
+            .split("T")[0];
+
+        // ========================================================
+        // Get pending appointments
+        // ========================================================
+
+        let query = supabase
+            .from("appointment")
+            .select(selectStatment, {
+                count: "exact",
+            })
+            .eq("status", "pending")
+            .gte("appointment_date", todayDate)
+            .lte("appointment_date", tomorrowDate);
+
+        // ========================================================
+        // Search by patient name
+        // ========================================================
+
+        if (keyword) {
+            query = query.ilike(
+                "patient_name",
+                `%${keyword}%`,
+            );
+        }
+
+        // ========================================================
+        // Sorting
+        // ========================================================
+
+        query = query
+            .order("appointment_date", {
+                ascending: true,
+            })
+            .order("created_at", {
+                ascending: true,
+            });
+
+        // ========================================================
+        // Execute Query
+        // ========================================================
+
+        const {
+            data: appointments,
+            error,
+            count,
+        } = await query;
+
+        // ========================================================
+        // Error
+        // ========================================================
+
+        if (error) {
+            return next(
+                new ApiError(
+                    "حدث خطأ أثناء جلب الحجوزات المعلقة",
+                    500,
+                ),
+            );
+        }
+
+        // ========================================================
+        // Replace doctor image and payment receipt
+        // ========================================================
+
+        for (const appointment of appointments || []) {
+            if (
+                appointment.doctor_schedule?.doctor?.path_image
+            ) {
+                appointment.doctor_schedule.doctor.path_image =
+                    getPublicImageUrl(
+                        STORAGE_BUCKETS.DOCTORS,
+                        appointment.doctor_schedule.doctor.path_image,
+                    );
+            }
+
+            if (appointment.payment_receipt) {
+                try {
+                    appointment.payment_receipt =
+                        await createSignedImageUrl(
+                            STORAGE_BUCKETS.PAYMENT_RECEIPTS,
+                            appointment.payment_receipt,
+                        );
+                } catch {
+                    appointment.payment_receipt = null;
+                }
+            }
+        }
+
+        // ========================================================
+        // Response
+        // ========================================================
+
+        res.status(200).json({
+            status: "success",
+
+            message:
+                "تم جلب الحجوزات المعلقة بنجاح",
+
+            count: count || 0,
+
+            results: appointments || [],
+        });
+    },
+);
 
 // @Desc Create new appointment
 // @Route POST : /api/appointments
@@ -685,6 +829,18 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
 
     const {status, admin_notes} = req.body;
 
+    // Allowed statuses
+    const allowedStatuses = [
+        "pending",
+        "approved",
+        "rejected",
+        "cancelled",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
+        return next(new ApiError("حالة الحجز غير صحيحة", 400));
+    }
+
     // Check appointment
     const {data: appoint, error} = await supabase
         .from("appointment")
@@ -692,36 +848,49 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
         .eq("appointment_id", id)
         .single();
 
-    if (!appoint || error) return next(new ApiError("الحجز غير موجود", 404));
+    if (!appoint || error) {
+        return next(new ApiError("الحجز غير موجود", 404));
+    }
 
     // Prevent changing cancelled appointment
-    if (appoint.status === "cancelled")
-        return next(new ApiError("لا يمكن تعديل حالة حجز ملغي", 400));
+    if (appoint.status === "cancelled") {
+        return next(
+            new ApiError("لا يمكن تعديل حالة حجز ملغي", 400),
+        );
+    }
 
     // Prevent updating to same status
-    if (appoint.status === status)
-        return next(new ApiError("الحجز بهذه الحالة بالفعل", 400));
+    if (appoint.status === status) {
+        return next(
+            new ApiError("الحجز بهذه الحالة بالفعل", 400),
+        );
+    }
 
     // Check max patients only when approving
     if (status === "approved") {
+
         // Get schedule
         const {data: schedule, error: scheduleError} = await supabase
             .from("doctor_schedule")
-            .select(
-                `
+            .select(`
                 schedule_id,
                 max_patients,
                 status
-            `,
-            )
+            `)
             .eq("schedule_id", appoint.schedule_id)
             .single();
 
-        if (!schedule || scheduleError)
-            return next(new ApiError("الدوام غير موجود", 404));
+        if (!schedule || scheduleError) {
+            return next(
+                new ApiError("الدوام غير موجود", 404),
+            );
+        }
 
-        if (schedule.status != "active")
-            return next(new ApiError("هذا الدوام غير متاح حالياً", 400));
+        if (schedule.status !== "active") {
+            return next(
+                new ApiError("هذا الدوام غير متاح حالياً", 400),
+            );
+        }
 
         // Count approved appointments
         const {count, error: countError} = await supabase
@@ -734,50 +903,104 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
             .eq("appointment_date", appoint.appointment_date)
             .eq("status", "approved");
 
-        if (countError)
+        if (countError) {
             return next(
-                new ApiError("حدث خطأ أثناء التحقق من عدد الحجوزات", 500),
+                new ApiError(
+                    "حدث خطأ أثناء التحقق من عدد الحجوزات",
+                    500,
+                ),
             );
+        }
 
-        if (count >= schedule.max_patients)
+        if (count >= schedule.max_patients) {
             return next(
                 new ApiError(
                     "تم الوصول إلى الحد الأقصى للحجوزات لهذا الدوام",
                     400,
                 ),
             );
+        }
     }
 
-    // Delete Caching
+    // Update appointment
+    const {data: changedAppointment, error: changeError} =
+        await supabase
+            .from("appointment")
+            .update({
+                status,
+                admin_notes,
+            })
+            .eq("appointment_id", id)
+            .select(selectStatment)
+            .single();
+
+    if (!changedAppointment || changeError) {
+        return next(
+            new ApiError(
+                "حدث خطأ أثناء تحديث حالة الحجز",
+                400,
+            ),
+        );
+    }
+
+    // Delete Cache
     await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
-    // Update appointment
-    const {data: changedAppointment, error: changeError} = await supabase
-        .from("appointment")
-        .update({
-            status,
-            admin_notes,
-        })
-        .eq("appointment_id", id)
-        .select(selectStatment)
-        .single();
+    // Send notification
+    try {
+        await sendNotificationToUser({
+            userId: changedAppointment.user_id,
 
-    if (!changedAppointment || changeError)
-        return next(new ApiError("حدث خطأ أثناء تحديث حالة الحجز", 400));
+            title:
+                status === "approved"
+                    ? "تم قبول حجزك مع الطبيب"
+                    : status === "rejected"
+                      ? "تم رفض حجزك"
+                      : status === "cancelled"
+                        ? "تم إلغاء حجزك"
+                        : "تم تحديث حالة حجزك",
 
-    if (appointment.doctor_schedule?.doctor?.path_image) {
-        appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DOCTORS,
-            appointment.doctor_schedule.doctor.path_image,
-        );
+            message:
+                status === "approved"
+                    ? "تم تأكيد موعدك مع الطبيب، احضر سند الدفع لتأكيد الدفع عند الاستقبال"
+                    : status === "rejected"
+                      ? "نعتذر، تم رفض حجزك. يرجى مراجعة تفاصيل الموعد، وحافظ على سند الدفع حتى تستطيع إعادة الحجز أو الحضور لاسترجاع المبلغ"
+                      : status === "cancelled"
+                        ? "تم إلغاء موعدك، يرجى مراجعة تفاصيل الحجز"
+                        : "تم تحديث حالة حجزك",
+
+            type: "appointment",
+
+            data: {
+                appointment_id:
+                    changedAppointment.appointment_id,
+                status,
+            },
+        });
+    } catch (error) {
+        console.error("هناك مشكلة في ارسال الاشعارات:", error);
     }
+
+    // Doctor image
+    if (
+        changedAppointment.doctor_schedule?.doctor?.path_image
+    ) {
+        changedAppointment.doctor_schedule.doctor.path_image =
+            getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                changedAppointment.doctor_schedule.doctor.path_image,
+            );
+    }
+
+    // Payment receipt
     if (changedAppointment.payment_receipt) {
         try {
-            changedAppointment.payment_receipt = await createSignedImageUrl(
-                STORAGE_BUCKETS.PAYMENT_RECEIPTS,
-                changedAppointment.payment_receipt,
-            );
+            changedAppointment.payment_receipt =
+                await createSignedImageUrl(
+                    STORAGE_BUCKETS.PAYMENT_RECEIPTS,
+                    changedAppointment.payment_receipt,
+                );
         } catch {
             changedAppointment.payment_receipt = null;
         }
@@ -785,9 +1008,7 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
 
     res.status(200).json({
         status: "success",
-
         message: "تم تحديث حالة الحجز بنجاح",
-
         results: changedAppointment,
     });
 });

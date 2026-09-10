@@ -17,6 +17,7 @@ import {
     setCache,
 } from "../services/cache.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
+import {sendNotificationToAll} from "../services/notification.service.js";
 
 // @Desc Get all ads with pagination, filters, search and sorting
 // @Route GET : /api/ads
@@ -32,12 +33,7 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     const {page, limit, from, to} = paginate(req);
 
     // Filters
-    const {
-        keyword,
-        status,
-        expired,
-        sort = "-created_at",
-    } = req.query;
+    const {keyword, status, expired, sort = "-created_at"} = req.query;
 
     const today = new Date().toISOString().split("T")[0];
 
@@ -66,9 +62,7 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Base Query
-    let query = supabase
-        .from("ads")
-        .select("*", {count: "exact"});
+    let query = supabase.from("ads").select("*", {count: "exact"});
 
     // Search
     if (keyword) {
@@ -93,12 +87,9 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Sorting
-    query = query.order(
-        sort.startsWith("-") ? sort.substring(1) : sort,
-        {
-            ascending: !sort.startsWith("-"),
-        },
-    );
+    query = query.order(sort.startsWith("-") ? sort.substring(1) : sort, {
+        ascending: !sort.startsWith("-"),
+    });
 
     // Execute Query
     const {data: ads, error, count} = await query.range(from, to);
@@ -121,10 +112,7 @@ export const getAdsInfo = AsyncHandler(async (req, res, next) => {
 
     // Add Public Image URL
     ads.forEach((ad) => {
-        ad.image_url = getPublicImageUrl(
-            STORAGE_BUCKETS.ADS,
-            ad.path_image,
-        );
+        ad.image_url = getPublicImageUrl(STORAGE_BUCKETS.ADS, ad.path_image);
     });
 
     res.status(200).json({
@@ -217,6 +205,20 @@ export const insertAd = AsyncHandler(async (req, res, next) => {
 
         // Add public image url
         ad.image_url = getPublicImageUrl(STORAGE_BUCKETS.ADS, ad.path_image);
+
+        // Send notification to all devices
+        try {
+            await sendNotificationToAll({
+                title: "إعلان جديد 🎉",
+                message: "تمت إضافة إعلان جديد، اكتشفه الآن",
+                type: "ad",
+                data: {
+                    ad_id: ad.ad_id,
+                },
+            });
+        } catch (error) {
+            console.error("Failed to send ad notification:", error);
+        }
 
         // Response
         res.status(201).json({

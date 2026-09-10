@@ -36,6 +36,6 @@ router
         updateAd,
     )
     .delete("/:id", protect, allowedTo("admin"), deleteAd)
-    .patch("/:id/status", protect, allowedTo("admin"), toggleAdStatus);
+    .patch("/:id/status", protect, allowedTo("admin"), toggleAdStatus)
 
 export default router;

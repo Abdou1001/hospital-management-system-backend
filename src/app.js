@@ -10,6 +10,7 @@ import cookieParser from "cookie-parser";
 import compression from "compression";
 
 // Routes
+import { apiRateLimit } from "./middlewares/rateLimit.middleware.js";
 import AuthRoutes from "./routes/auth.route.js";
 import HospitalRoutes from "./routes/hospital.route.js";
 import DepartmentsRoutes from "./routes/departments.route.js";
@@ -19,9 +20,10 @@ import UsersRoutes from "./routes/users.route.js";
 import AppointmentsRoutes from "./routes/appointments.route.js";
 import DoctorDepartmentsRoutes from "./routes/doctorDepartments.route.js";
 import DoctorScheduleRoutes from "./routes/doctorSchedule.route.js";
-import dashboardRouter from "./routes/dashboard.route.js";
-import { apiRateLimit } from "./middlewares/rateLimit.middleware.js";
 import bankAccountsRoute from "./routes/bankAccounts.route.js";
+import notificationsRouter from "./routes/notifications.route.js";
+import devicesRouter from "./routes/devices.route.js";
+import dashboardRouter from "./routes/dashboard.route.js";
 
 // .env configurtion
 dotenv.config();
@@ -75,6 +77,10 @@ app.use("/api/doctor-departments", DoctorDepartmentsRoutes);
 app.use("/api/doctor-schedule", DoctorScheduleRoutes);
 // bank-accounts
 app.use("/api/bank-accounts", bankAccountsRoute);
+// notifications
+app.use("/api/notifications", notificationsRouter);
+// devices
+app.use("/api/devices", devicesRouter);
 // dashboard
 app.use("/api/dashboard", dashboardRouter);
 

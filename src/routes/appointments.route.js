@@ -8,6 +8,7 @@ import {
     getAppointmentsInfo,
     getMyAppointments,
     getOneAppointmentInfo,
+    getPendingAppointments,
     updateAppointment,
 } from "../controller/appointments.controller.js";
 import {
@@ -32,6 +33,13 @@ router
     )
 
     .get("/my-appointments", protect, getMyAppointments)
+
+    .get(
+        "/pending",
+        protect,
+        allowedTo("admin", "reception"),
+        getPendingAppointments,
+    )
 
     .get(
         "/:id",

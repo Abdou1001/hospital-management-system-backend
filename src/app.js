@@ -31,6 +31,8 @@ dotenv.config();
 // Use Express
 const app = express();
 
+app.set("trust proxy", 1);
+
 // Security Headers
 app.use(helmet());
 

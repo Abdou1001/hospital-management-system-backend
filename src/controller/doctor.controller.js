@@ -16,6 +16,10 @@ import {
     setCache,
 } from "../services/cache.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
+import {
+    createDoctorWithRelations,
+    updateDoctorWithRelations,
+} from "../services/doctor.service.js";
 
 // @Desc Get all Doctors with pagination, search, filters and sorting
 // @Route GET : /api/doctors/
@@ -76,18 +80,8 @@ export const getDoctorsInfo = AsyncHandler(async (req, res, next) => {
                 doctor_deprtment_id,
                 department (
                     depart_id,
-                    depart_name,
-                    path_image
+                    depart_name
                 )
-            ),
-            doctor_schedule (
-                schedule_id,
-                day_of_week,
-                shift_type,
-                start_time,
-                end_time,
-                status,
-                max_patients
             )
             `,
             {count: "exact"},
@@ -185,8 +179,7 @@ export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
                 doctor_deprtment_id,
                 department (
                     depart_id,
-                    depart_name,
-                    path_image
+                    depart_name
                 )
             ),
             doctor_schedule (
@@ -230,150 +223,318 @@ export const getOneDoctorInfo = AsyncHandler(async (req, res, next) => {
 // @Route POST : /api/doctors/
 // @Access private (Admin)
 export const insertDoctor = AsyncHandler(async (req, res, next) => {
-    const {
-        full_name,
-        email,
-        bio,
-        education,
-        gender,
-        years_exper,
-        phone_number,
-        notes,
-        consultation_fee,
-    } = req.body;
-
     let path_image = null;
 
     try {
-        // Upload image
+        /* ==========================================
+           1. رفع صورة الطبيب
+        ========================================== */
+
         path_image = await uploadAndProcessImage(
             STORAGE_BUCKETS.DOCTORS,
             req.file,
         );
 
-        const {data: doctor, error} = await supabase
-            .from("doctor")
-            .insert({
-                full_name,
-                email,
-                bio,
-                education,
-                gender,
-                years_exper,
-                phone_number,
-                path_image,
-                notes,
-                status: "active",
-                consultation_fee,
-            })
-            .select("*")
-            .single();
+        /* ==========================================
+           2. قراءة الأقسام
+           
+           Frontend سيرسلها كـ JSON داخل FormData:
+           
+           "[1,2,3]"
+        ========================================== */
 
-        if (error)
-            throw new ApiError(
-                "حدث خطاء أثناء إضافة الطبيب، حاول مرة اخرى",
-                400,
-            );
+        const departmentIds = req.body.department_ids
+            ? JSON.parse(req.body.department_ids)
+            : [];
 
-        // Delete caching to update data
+        /* ==========================================
+           3. قراءة الدوامات
+           
+           Frontend سيرسلها كـ JSON:
+           
+           [
+             {
+               day_of_week: "الاحد",
+               shift_type: "صباحي",
+               start_time: "08:00",
+               end_time: "12:00"
+             }
+           ]
+        ========================================== */
+
+        const schedules = req.body.schedules
+            ? JSON.parse(req.body.schedules)
+            : [];
+
+        /* ==========================================
+           4. تجهيز بيانات الطبيب
+
+           نحول القيم الرقمية من FormData
+           لأنها تصل من multipart/form-data
+           على شكل String.
+        ========================================== */
+
+        const doctor = {
+            full_name: req.body.full_name,
+
+            email: req.body.email || null,
+
+            bio: req.body.bio || null,
+
+            education: req.body.education || null,
+
+            gender: req.body.gender || null,
+
+            years_exper: req.body.years_exper
+                ? Number(req.body.years_exper)
+                : null,
+
+            phone_number: req.body.phone_number || null,
+
+            notes: req.body.notes || null,
+
+            consultation_fee: req.body.consultation_fee
+                ? Number(req.body.consultation_fee)
+                : null,
+        };
+
+        /* ==========================================
+           5. تنفيذ العملية كاملة
+
+           هنا Request واحد فقط إلى PostgreSQL
+
+           doctor
+           departments
+           schedules
+
+           كلها داخل Function واحدة.
+        ========================================== */
+
+        const doctorResult = await createDoctorWithRelations({
+            doctor,
+            pathImage: path_image,
+            departmentIds,
+            schedules,
+        });
+
+        /* ==========================================
+           6. حذف Cache القديم
+
+           لأن بيانات الأطباء تغيرت.
+        ========================================== */
+
         await deleteByPattern("doctors:*");
+
         await deleteCache(CACHE_KEYS.DASHBOARD);
 
-        doctor.path_image = getPublicImageUrl(
-            STORAGE_BUCKETS.DOCTORS,
-            doctor.path_image,
-        );
+        /* ==========================================
+           7. تحويل مسار الصورة إلى Public URL
+
+           PostgreSQL يرجع path_image فقط.
+        ========================================== */
+
+        if (doctorResult?.path_image) {
+            doctorResult.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                doctorResult.path_image,
+            );
+        }
+
+        /* ==========================================
+           8. إرسال Response للـ Frontend
+        ========================================== */
 
         res.status(201).json({
             status: "success",
+
             message: "تم اضافة الطبيب بنجاح",
-            results: doctor,
+
+            results: doctorResult,
         });
     } catch (err) {
+        /* ==========================================
+           9. Rollback للصورة
+
+           PostgreSQL يستطيع Rollback للـ Database،
+           لكن Storage ليس جزءًا من Transaction.
+
+           لذلك إذا فشل RPC بعد رفع الصورة،
+           نحذف الصورة يدويًا.
+        ========================================== */
+
         await rollbackUploadedImage(STORAGE_BUCKETS.DOCTORS, path_image);
 
         return next(err);
     }
 });
 
-// @Desc Update one doctor
+// @Desc Update one doctor with relations
 // @Route PUT : /api/doctors/:id
 // @Access Private (Admin)
 export const updateDoctor = AsyncHandler(async (req, res, next) => {
     const {id} = req.params;
 
-    const {
-        full_name,
-        email,
-        bio,
-        education,
-        gender,
-        years_exper,
-        phone_number,
-        notes,
-        status,
-        consultation_fee,
-    } = req.body;
+    let path_image = null;
 
-    // Get current doctor
-    const {data: currentDoctor, error: currentError} = await supabase
-        .from("doctor")
-        .select("*")
-        .eq("doctor_id", id)
-        .single();
+    try {
+        /* ==========================================
+           1. قراءة الأقسام
+        ========================================== */
 
-    if (!currentDoctor || currentError)
-        return next(new ApiError("الطبيب غير موجود", 404));
+        const departmentIds = req.body.department_ids
+            ? JSON.parse(req.body.department_ids)
+            : [];
 
-    const doctor = await replaceImage({
-        bucket: STORAGE_BUCKETS.DOCTORS,
+        /* ==========================================
+           2. قراءة الدوامات
+        ========================================== */
 
-        currentImage: currentDoctor.path_image,
+        const schedules = req.body.schedules
+            ? JSON.parse(req.body.schedules)
+            : [];
 
-        file: req.file,
+        /* ==========================================
+           3. تجهيز بيانات الطبيب
+        ========================================== */
 
-        action: async (path_image) => {
-            const {data, error} = await supabase
-                .from("doctor")
-                .update({
-                    full_name,
-                    email,
-                    bio,
-                    education,
-                    gender,
-                    years_exper,
-                    phone_number,
-                    path_image,
-                    notes,
-                    status,
-                    consultation_fee,
-                })
-                .eq("doctor_id", id)
-                .select("*")
-                .single();
+        const doctor = {
+            full_name: req.body.full_name,
 
-            if (!data || error)
-                throw new ApiError("حدث خطأ أثناء تعديل بيانات الطبيب", 400);
+            email: req.body.email || null,
 
-            return data;
-        },
-    });
+            bio: req.body.bio || null,
 
-    // Delete caching to update data
-    await deleteByPattern("doctors:*");
-    await deleteCache(CACHE_KEYS.DOCTOR(id));
-    await deleteCache(CACHE_KEYS.DASHBOARD);
+            education: req.body.education || null,
 
-    doctor.path_image = getPublicImageUrl(
-        STORAGE_BUCKETS.DOCTORS,
-        doctor.path_image,
-    );
+            gender: req.body.gender || null,
 
-    res.status(200).json({
-        status: "success",
-        message: "تم تعديل الطبيب بنجاح",
-        results: doctor,
-    });
+            years_exper: req.body.years_exper
+                ? Number(req.body.years_exper)
+                : null,
+
+            phone_number: req.body.phone_number || null,
+
+            notes: req.body.notes || null,
+
+            status: req.body.status || null,
+
+            consultation_fee: req.body.consultation_fee
+                ? Number(req.body.consultation_fee)
+                : null,
+        };
+
+        /* ==========================================
+           4. الحصول على الصورة الحالية
+        ========================================== */
+
+        const {data: currentDoctor, error: currentError} = await supabase
+            .from("doctor")
+            .select("doctor_id, path_image")
+            .eq("doctor_id", id)
+            .single();
+
+        if (!currentDoctor || currentError) {
+            return next(new ApiError("الطبيب غير موجود", 404));
+        }
+
+        /* ==========================================
+           5. استبدال الصورة إذا تم إرسال صورة جديدة
+
+           replaceImage يتولى:
+           - رفع الصورة الجديدة
+           - تنفيذ العملية
+           - حذف الصورة القديمة عند النجاح
+        ========================================== */
+
+        const result = await replaceImage({
+            bucket: STORAGE_BUCKETS.DOCTORS,
+
+            currentImage: currentDoctor.path_image,
+
+            file: req.file,
+
+            action: async (newPathImage) => {
+                path_image = newPathImage || currentDoctor.path_image;
+
+                /* ======================================
+                   6. استدعاء PostgreSQL RPC
+
+                   هنا تتم العملية كاملة:
+
+                   Doctor
+                   Departments
+                   Schedules
+                ====================================== */
+
+                return await updateDoctorWithRelations({
+                    doctorId: Number(id),
+
+                    doctor,
+
+                    pathImage: path_image,
+
+                    departmentIds,
+
+                    schedules,
+                });
+            },
+        });
+
+        /* ==========================================
+           7. حذف Cache
+        ========================================== */
+
+        await Promise.all([
+            // Cache قائمة الأطباء
+            deleteByPattern("doctors:*"),
+
+            // Cache علاقات الأطباء بالأقسام
+            deleteByPattern("doctor-departments:*"),
+
+            // Cache دوامات الأطباء
+            deleteByPattern("doctor-schedules:*"),
+
+            // Cache الطبيب نفسه
+            deleteCache(CACHE_KEYS.DOCTOR(id)),
+
+            // Cache دوامات هذا الطبيب تحديدًا
+            deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(id)),
+
+            // Cache لوحة التحكم
+            deleteCache(CACHE_KEYS.DASHBOARD),
+        ]);
+
+        /* ==========================================
+           8. تحويل الصورة إلى Public URL
+        ========================================== */
+
+        if (result?.path_image) {
+            result.path_image = getPublicImageUrl(
+                STORAGE_BUCKETS.DOCTORS,
+                result.path_image,
+            );
+        }
+
+        /* ==========================================
+           9. Response
+        ========================================== */
+
+        res.status(200).json({
+            status: "success",
+
+            message: "تم تعديل الطبيب بنجاح",
+
+            results: result,
+        });
+    } catch (err) {
+        /* ==========================================
+           Rollback للصورة إذا فشلت العملية
+        ========================================== */
+
+        await rollbackUploadedImage(STORAGE_BUCKETS.DOCTORS, path_image);
+
+        return next(err);
+    }
 });
 
 // @Desc Toggle doctor booking status
@@ -384,7 +545,7 @@ export const changeDoctorStatus = AsyncHandler(async (req, res, next) => {
 
     const {data: doctor, error} = await supabase
         .from("doctor")
-        .select("*")
+        .select("doctor_id, status")
         .eq("doctor_id", id)
         .single();
 
@@ -396,18 +557,13 @@ export const changeDoctorStatus = AsyncHandler(async (req, res, next) => {
             status: doctor.status === "active" ? "inactive" : "active",
         })
         .eq("doctor_id", id)
-        .select("*")
+        .select("doctor_id, status")
         .single();
 
     // Delete caching to update data
     await deleteByPattern("doctors:*");
     await deleteCache(CACHE_KEYS.DOCTOR(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
-
-    doctor.path_image = getPublicImageUrl(
-        STORAGE_BUCKETS.DOCTORS,
-        doctor.path_image,
-    );
 
     res.status(200).json({
         status: "success",
@@ -424,7 +580,7 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
 
     const {data: doctor, error} = await supabase
         .from("doctor")
-        .select("*")
+        .select("doctor_id, is_hidden")
         .eq("doctor_id", id)
         .single();
 
@@ -436,7 +592,7 @@ export const toggleDoctorVisibility = AsyncHandler(async (req, res, next) => {
             is_hidden: !doctor.is_hidden,
         })
         .eq("doctor_id", id)
-        .select("*")
+        .select("doctor_id, is_hidden")
         .single();
 
     // Delete caching to update data

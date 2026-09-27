@@ -245,7 +245,7 @@ export const updateAd = AsyncHandler(async (req, res, next) => {
     // Get current advertisement
     const {data: currentAd, error: currentError} = await supabase
         .from("ads")
-        .select("*")
+        .select("ad_id, path_image")
         .eq("ad_id", id)
         .single();
 

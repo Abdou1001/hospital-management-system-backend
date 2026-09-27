@@ -11,7 +11,12 @@ import {
     uploadAndProcessImage,
 } from "../services/imageUpload.service.js";
 import {CACHE_KEYS, CACHE_TTL} from "../config/cache.js";
-import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cache.service.js";
+import {
+    deleteByPattern,
+    deleteCache,
+    getCache,
+    setCache,
+} from "../services/cache.service.js";
 
 // @Desc Get all departments with pagination
 // @Route GET : /api/departments
@@ -20,7 +25,7 @@ import {deleteByPattern, deleteCache, getCache, setCache} from "../services/cach
 // @Access Public
 export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     // Pagination
-    const { page, limit, from, to } = paginate(req);
+    const {page, limit, from, to} = paginate(req);
 
     const keyword = req.query.keyword || "";
     const sort = req.query.sort || "name";
@@ -59,11 +64,9 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
         )
         .ilike("depart_name", `%${keyword}%`);
 
+    const {data: departments, error, count} = await query.range(from, to);
 
-    const { data: departments, error, count } = await query.range(from, to);
-
-    if (error)
-        return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
+    if (error) return next(new ApiError("حدث خطأ أثناء جلب الأقسام", 500));
 
     // تجهيز عدد الأطباء
     departments.forEach((department) => {
@@ -91,15 +94,6 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
     // Pagination
     const pagination = paginationResult(page, limit, count);
 
-
-    const results = departments.map((department) => ({
-        ...department,
-        path_image: getPublicImageUrl(
-            STORAGE_BUCKETS.DEPARTMENTS,
-            department.path_image,
-        ),
-    }));
-
     // Save Cache
     await setCache(
         cacheKey,
@@ -110,11 +104,19 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
         CACHE_TTL.DEPARTMENTS,
     );
 
+    const results = departments.map((department) => ({
+        ...department,
+        path_image: getPublicImageUrl(
+            STORAGE_BUCKETS.DEPARTMENTS,
+            department.path_image,
+        ),
+    }));
+
     res.status(200).json({
         status: "success",
         message: "تم جلب الأقسام بنجاح",
         pagination,
-        results
+        results,
     });
 });
 
@@ -122,7 +124,7 @@ export const getDepartmentsInfo = AsyncHandler(async (req, res, next) => {
 // @Route GET : /api/department
 // @Access Public
 export const getOneDepartmentInfo = AsyncHandler(async (req, res, next) => {
-    const { id } = req.params;
+    const {id} = req.params;
 
     const cacheKey = CACHE_KEYS.DEPARTMENT(id);
 
@@ -143,21 +145,16 @@ export const getOneDepartmentInfo = AsyncHandler(async (req, res, next) => {
     }
 
     // Query
-    const { data: department, error } = await supabase
+    const {data: department, error} = await supabase
         .from("department")
         .select("*")
         .eq("depart_id", id)
         .single();
 
-    if (!department || error)
-        return next(new ApiError("القسم غير موجود", 404));
+    if (!department || error) return next(new ApiError("القسم غير موجود", 404));
 
     // Save Cache
-    await setCache(
-        cacheKey,
-        department,
-        CACHE_TTL.DEPARTMENTS,
-    );
+    await setCache(cacheKey, department, CACHE_TTL.DEPARTMENTS);
 
     // Add public image url
     department.path_image = getPublicImageUrl(

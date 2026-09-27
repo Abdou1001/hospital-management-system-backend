@@ -2,10 +2,6 @@ import cron from "node-cron";
 import {supabase} from "../config/supabase.js";
 import {sendNotificationToAll} from "../services/notification.service.js";
 
-// ============================================================
-// Notification messages
-// ============================================================
-
 const discoveryMessages = [
     {
         title: "تبحث عن طبيب مناسب؟ 👨‍⚕️",
@@ -59,31 +55,23 @@ const discoveryMessages = [
     },
 ];
 
-// ============================================================
-// Get random notification
-// ============================================================
-
 const getRandomMessage = () => {
-    const randomIndex = Math.floor(Math.random() * discoveryMessages.length);
-
-    return discoveryMessages[randomIndex];
+    return discoveryMessages[
+        Math.floor(Math.random() * discoveryMessages.length)
+    ];
 };
 
-// ============================================================
-// Start notification jobs
-// ============================================================
-
 export const startNotificationJobs = () => {
-    // Run every day at 10:00 AM
+    // يعمل كل يوم الساعة 11:00 صباحًا بتوقيت عدن
     cron.schedule(
-        "0 10 * * *",
+        "0 11 * * *",
         async () => {
             console.log(
                 `[Notification Job] Checking at ${new Date().toISOString()}`,
             );
 
             try {
-                // Get the latest general discovery notification
+                // آخر إشعار Discovery عام
                 const {data: lastNotification, error} = await supabase
                     .from("notifications")
                     .select("notification_id, created_at")
@@ -99,8 +87,7 @@ export const startNotificationJobs = () => {
                     );
                 }
 
-                // If a notification was sent before,
-                // check if 3 days have passed
+                // منع إرسال Discovery إذا لم تمر 3 أيام
                 if (lastNotification) {
                     const lastSentAt = new Date(
                         lastNotification.created_at,
@@ -110,18 +97,15 @@ export const startNotificationJobs = () => {
 
                     const threeDays = 3 * 24 * 60 * 60 * 1000;
 
-                    const timePassed = now - lastSentAt;
-
-                    if (timePassed < threeDays) {
+                    if (now - lastSentAt < threeDays) {
                         console.log(
                             "[Notification Job] 3 days have not passed yet. Skipping.",
                         );
-
                         return;
                     }
                 }
 
-                // Get random notification
+                // اختيار رسالة عشوائية
                 const notification = getRandomMessage();
 
                 console.log(
@@ -154,7 +138,5 @@ export const startNotificationJobs = () => {
         },
     );
 
-    console.log("Notification jobs started - Every 3 days at 10:00 AM");
+    console.log("Notification jobs started - Every 3 days at 11:00 AM");
 };
-
-

@@ -46,7 +46,7 @@ export const registerSchema = z
             .trim()
             .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 
-        gender: z.enum(["ذكر", "انثى"], {
+        gender: z.enum(["ذكر", "أنثى"], {
             error: () => ({
                 message: "الجنس غير صالح",
             }),
@@ -141,7 +141,7 @@ export const verifyPasswordResetCodeSchema = z.object({
 
 export const resendOTPSchema = z.object({
     phone_number: z
-        .string( "رقم الهاتف مطلوب")
+        .string("رقم الهاتف مطلوب")
         .regex(/^7\d{8}$/, "رقم الهاتف اليمني غير صالح"),
 });
 

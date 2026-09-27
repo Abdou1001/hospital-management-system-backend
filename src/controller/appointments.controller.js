@@ -15,6 +15,7 @@ import {
 import {deleteCache} from "../services/cache.service.js";
 import {CACHE_KEYS} from "../config/cache.js";
 import {sendNotificationToUser} from "../services/notification.service.js";
+import normalizeArabicDay from "../utils/normalizeArabicDay.js";
 
 const platform_fee_ = Number(process.env.PLATFORM_FEE);
 const selectStatment = `
@@ -27,14 +28,6 @@ const selectStatment = `
             full_name,
             path_image
         )
-    ),
-    user (
-        user_id,
-        full_name,
-        email,
-        phone_number,
-        date_of_birth,
-        gender
     )
 `;
 // @Desc Get all appointments with pagination, search, filters and sorting
@@ -71,7 +64,7 @@ export const getAppointmentsInfo = AsyncHandler(async (req, res, next) => {
         count: "exact",
     });
 
-    // Search for doctor or patient's name or Phone
+    // Search for doctor or patient's name or phone
     if (keyword) {
         const {data: doctors} = await supabase
             .from("doctor")
@@ -89,26 +82,37 @@ export const getAppointmentsInfo = AsyncHandler(async (req, res, next) => {
             schedules?.map((schedule) => schedule.schedule_id) || [];
 
         query = query.or(
-            `patient_name.ilike.%${keyword}%,patient_phone.ilike.%${keyword}%,schedule_id.in.(${scheduleIds.join(",")})`,
+            `patient_name.ilike.%${keyword}%,
+             patient_phone.ilike.%${keyword}%,
+             schedule_id.in.(${scheduleIds.join(",")})`,
         );
     }
 
     // Filter by status
-    if (status) query = query.eq("status", status);
+    if (status) {
+        query = query.eq("status", status);
+    }
 
     // Filter by appointment date
-    if (appointment_date)
+    if (appointment_date) {
         query = query.eq("appointment_date", appointment_date);
+    }
 
     // Filter by date range
-    if (from_date) query = query.gte("appointment_date", from_date);
+    if (from_date) {
+        query = query.gte("appointment_date", from_date);
+    }
 
-    if (to_date) query = query.lte("appointment_date", to_date);
+    if (to_date) {
+        query = query.lte("appointment_date", to_date);
+    }
 
     // Filter by patient gender
-    if (patient_gender) query = query.eq("patient_gender", patient_gender);
+    if (patient_gender) {
+        query = query.eq("patient_gender", patient_gender);
+    }
 
-    // Filter by Day of week
+    // Filter by day of week
     if (day_of_week) {
         const {data: schedules} = await supabase
             .from("doctor_schedule")
@@ -138,29 +142,36 @@ export const getAppointmentsInfo = AsyncHandler(async (req, res, next) => {
     const {data: appoint, error, count} = await query.range(from, to);
 
     // Error
-    if (!appoint || error)
+    if (!appoint || error) {
         return next(new ApiError("حدث خطأ أثناء جلب الطلبات", 500));
-
-    // Replace image paths
-    for (const appointment of appoint) {
-        if (appointment.doctor_schedule?.doctor?.path_image) {
-            appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
-                STORAGE_BUCKETS.DOCTORS,
-                appointment.doctor_schedule.doctor.path_image,
-            );
-        }
-
-        if (appointment.payment_receipt) {
-            try {
-                appointment.payment_receipt = await createSignedImageUrl(
-                    STORAGE_BUCKETS.PAYMENT_RECEIPTS,
-                    appointment.payment_receipt,
-                );
-            } catch {
-                appointment.payment_receipt = null;
-            }
-        }
     }
+
+    // Replace image paths and create signed URLs
+    // Run independent operations concurrently
+    await Promise.all(
+        appoint.map(async (appointment) => {
+            // Doctor image
+            if (appointment.doctor_schedule?.doctor?.path_image) {
+                appointment.doctor_schedule.doctor.path_image =
+                    getPublicImageUrl(
+                        STORAGE_BUCKETS.DOCTORS,
+                        appointment.doctor_schedule.doctor.path_image,
+                    );
+            }
+
+            // Payment receipt
+            if (appointment.payment_receipt) {
+                try {
+                    appointment.payment_receipt = await createSignedImageUrl(
+                        STORAGE_BUCKETS.PAYMENT_RECEIPTS,
+                        appointment.payment_receipt,
+                    );
+                } catch {
+                    appointment.payment_receipt = null;
+                }
+            }
+        }),
+    );
 
     // Response
     res.status(200).json({
@@ -270,20 +281,28 @@ export const getMyAppointments = AsyncHandler(async (req, res, next) => {
             `patient_phone.ilike.%${keyword}%`,
         ];
 
-        if (scheduleIds.length > 0)
+        if (scheduleIds.length > 0) {
             conditions.push(`schedule_id.in.(${scheduleIds.join(",")})`);
+        }
 
         query = query.or(conditions.join(","));
     }
 
     // Status Filter
-    if (status) query = query.eq("status", status);
+    if (status) {
+        query = query.eq("status", status);
+    }
 
     // Date Range
-    if (from_date) query = query.gte("appointment_date", from_date);
+    if (from_date) {
+        query = query.gte("appointment_date", from_date);
+    }
 
-    if (to_date) query = query.lte("appointment_date", to_date);
+    if (to_date) {
+        query = query.lte("appointment_date", to_date);
+    }
 
+    // Day of Week Filter
     if (day_of_week) {
         const {data: schedules} = await supabase
             .from("doctor_schedule")
@@ -314,29 +333,36 @@ export const getMyAppointments = AsyncHandler(async (req, res, next) => {
     const {data: appointments, error, count} = await query.range(from, to);
 
     // Error
-    if (!appointments || error)
+    if (!appointments || error) {
         return next(new ApiError("حدث خطأ أثناء جلب الحجوزات", 500));
-
-    // Replace image paths
-    for (const appointment of appointments) {
-        if (appointment.doctor_schedule?.doctor?.path_image) {
-            appointment.doctor_schedule.doctor.path_image = getPublicImageUrl(
-                STORAGE_BUCKETS.DOCTORS,
-                appointment.doctor_schedule.doctor.path_image,
-            );
-        }
-
-        if (appointment.payment_receipt) {
-            try {
-                appointment.payment_receipt = await createSignedImageUrl(
-                    STORAGE_BUCKETS.PAYMENT_RECEIPTS,
-                    appointment.payment_receipt,
-                );
-            } catch {
-                appointment.payment_receipt = null;
-            }
-        }
     }
+
+    // Replace image paths and create signed URLs
+    // Run independent operations concurrently
+    await Promise.all(
+        appointments.map(async (appointment) => {
+            // Doctor image
+            if (appointment.doctor_schedule?.doctor?.path_image) {
+                appointment.doctor_schedule.doctor.path_image =
+                    getPublicImageUrl(
+                        STORAGE_BUCKETS.DOCTORS,
+                        appointment.doctor_schedule.doctor.path_image,
+                    );
+            }
+
+            // Payment receipt
+            if (appointment.payment_receipt) {
+                try {
+                    appointment.payment_receipt = await createSignedImageUrl(
+                        STORAGE_BUCKETS.PAYMENT_RECEIPTS,
+                        appointment.payment_receipt,
+                    );
+                } catch {
+                    appointment.payment_receipt = null;
+                }
+            }
+        }),
+    );
 
     // Response
     res.status(200).json({
@@ -352,109 +378,86 @@ export const getMyAppointments = AsyncHandler(async (req, res, next) => {
 // @Desc Get pending appointments for Reception
 // @Route GET : /api/appointments/pending
 // @Access Private (Admin, Reception)
-export const getPendingAppointments = AsyncHandler(
-    async (req, res, next) => {
-        // ========================================================
-        // Search
-        // ========================================================
+export const getPendingAppointments = AsyncHandler(async (req, res, next) => {
+    // ========================================================
+    // Search
+    // ========================================================
 
-        const {keyword = ""} = req.query;
+    const {keyword = ""} = req.query;
 
-        // ========================================================
-        // Get today's date and tomorrow's date
-        // ========================================================
+    // ========================================================
+    // Get today's date and tomorrow's date
+    // ========================================================
 
-        const now = new Date();
+    const now = new Date();
 
-        const today = new Date(
-            Date.UTC(
-                now.getUTCFullYear(),
-                now.getUTCMonth(),
-                now.getUTCDate(),
-            ),
-        );
+    const today = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
 
-        const tomorrow = new Date(today);
+    const tomorrow = new Date(today);
 
-        tomorrow.setUTCDate(
-            tomorrow.getUTCDate() + 1,
-        );
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-        const todayDate = today
-            .toISOString()
-            .split("T")[0];
+    const todayDate = today.toISOString().split("T")[0];
 
-        const tomorrowDate = tomorrow
-            .toISOString()
-            .split("T")[0];
+    const tomorrowDate = tomorrow.toISOString().split("T")[0];
 
-        // ========================================================
-        // Get pending appointments
-        // ========================================================
+    // ========================================================
+    // Get pending appointments
+    // ========================================================
 
-        let query = supabase
-            .from("appointment")
-            .select(selectStatment, {
-                count: "exact",
-            })
-            .eq("status", "pending")
-            .gte("appointment_date", todayDate)
-            .lte("appointment_date", tomorrowDate);
+    let query = supabase
+        .from("appointment")
+        .select(selectStatment, {
+            count: "exact",
+        })
+        .eq("status", "pending")
+        .gte("appointment_date", todayDate)
+        .lte("appointment_date", tomorrowDate);
 
-        // ========================================================
-        // Search by patient name
-        // ========================================================
+    // ========================================================
+    // Search by patient name
+    // ========================================================
 
-        if (keyword) {
-            query = query.ilike(
-                "patient_name",
-                `%${keyword}%`,
-            );
-        }
+    if (keyword) {
+        query = query.ilike("patient_name", `%${keyword}%`);
+    }
 
-        // ========================================================
-        // Sorting
-        // ========================================================
+    // ========================================================
+    // Sorting
+    // ========================================================
 
-        query = query
-            .order("appointment_date", {
-                ascending: true,
-            })
-            .order("created_at", {
-                ascending: true,
-            });
+    query = query
+        .order("appointment_date", {
+            ascending: true,
+        })
+        .order("created_at", {
+            ascending: true,
+        });
 
-        // ========================================================
-        // Execute Query
-        // ========================================================
+    // ========================================================
+    // Execute Query
+    // ========================================================
 
-        const {
-            data: appointments,
-            error,
-            count,
-        } = await query;
+    const {data: appointments, error, count} = await query;
 
-        // ========================================================
-        // Error
-        // ========================================================
+    // ========================================================
+    // Error
+    // ========================================================
 
-        if (error) {
-            return next(
-                new ApiError(
-                    "حدث خطأ أثناء جلب الحجوزات المعلقة",
-                    500,
-                ),
-            );
-        }
+    if (error) {
+        return next(new ApiError("حدث خطأ أثناء جلب الحجوزات المعلقة", 500));
+    }
 
-        // ========================================================
-        // Replace doctor image and payment receipt
-        // ========================================================
+    // ========================================================
+    // Replace doctor image and payment receipt
+    // ========================================================
 
-        for (const appointment of appointments || []) {
-            if (
-                appointment.doctor_schedule?.doctor?.path_image
-            ) {
+    await Promise.all(
+        (appointments || []).map(async (appointment) => {
+            // Doctor image
+            if (appointment.doctor_schedule?.doctor?.path_image) {
                 appointment.doctor_schedule.doctor.path_image =
                     getPublicImageUrl(
                         STORAGE_BUCKETS.DOCTORS,
@@ -462,35 +465,34 @@ export const getPendingAppointments = AsyncHandler(
                     );
             }
 
+            // Payment receipt
             if (appointment.payment_receipt) {
                 try {
-                    appointment.payment_receipt =
-                        await createSignedImageUrl(
-                            STORAGE_BUCKETS.PAYMENT_RECEIPTS,
-                            appointment.payment_receipt,
-                        );
+                    appointment.payment_receipt = await createSignedImageUrl(
+                        STORAGE_BUCKETS.PAYMENT_RECEIPTS,
+                        appointment.payment_receipt,
+                    );
                 } catch {
                     appointment.payment_receipt = null;
                 }
             }
-        }
+        }),
+    );
 
-        // ========================================================
-        // Response
-        // ========================================================
+    // ========================================================
+    // Response
+    // ========================================================
 
-        res.status(200).json({
-            status: "success",
+    res.status(200).json({
+        status: "success",
 
-            message:
-                "تم جلب الحجوزات المعلقة بنجاح",
+        message: "تم جلب الحجوزات المعلقة بنجاح",
 
-            count: count || 0,
+        count: count || 0,
 
-            results: appointments || [],
-        });
-    },
-);
+        results: appointments || [],
+    });
+});
 
 // @Desc Create new appointment
 // @Route POST : /api/appointments
@@ -548,8 +550,11 @@ export const createAppointment = AsyncHandler(async (req, res, next) => {
             },
         );
 
-        if (appointmentDay.toLowerCase() !== schedule.day_of_week.toLowerCase())
-            throw new ApiError("الدكتور لا يداوم في هذا اليوم", 400);
+        const normalizedAppointmentDay = normalizeArabicDay(appointmentDay);
+        const normalizedScheduleDay = normalizeArabicDay(schedule.day_of_week);
+
+        if (normalizedAppointmentDay !== normalizedScheduleDay)
+            throw new ApiError("الطبيب لا يداوم في هذا اليوم", 400);
 
         // Prevent duplicate appointment
         const {data: existingAppointment} = await supabase
@@ -558,6 +563,7 @@ export const createAppointment = AsyncHandler(async (req, res, next) => {
             .eq("schedule_id", schedule_id)
             .eq("appointment_date", appointment_date)
             .eq("patient_phone", patient_phone)
+            .eq("patient_name", patient_name)
             .single();
 
         if (existingAppointment)
@@ -715,11 +721,13 @@ export const updateAppointment = AsyncHandler(async (req, res, next) => {
                 timeZone: "UTC",
             });
 
-            if (
-                appointmentDay.toLowerCase() !==
-                schedule.day_of_week.toLowerCase()
-            )
-                throw new ApiError("الدكتور لا يداوم في هذا اليوم", 400);
+            const normalizedAppointmentDay = normalizeArabicDay(appointmentDay);
+            const normalizedScheduleDay = normalizeArabicDay(
+                schedule.day_of_week,
+            );
+
+            if (normalizedAppointmentDay !== normalizedScheduleDay)
+                throw new ApiError("الطبيب لا يداوم في هذا اليوم", 400);
 
             // Prevent duplicate appointment
             const {data: existingAppointment} = await supabase
@@ -728,6 +736,7 @@ export const updateAppointment = AsyncHandler(async (req, res, next) => {
                 .eq("schedule_id", schedule_id)
                 .eq("appointment_date", appointment_date)
                 .eq("patient_phone", patient_phone)
+                .eq("patient_name", patient_name)
                 .neq("appointment_id", id)
                 .single();
 

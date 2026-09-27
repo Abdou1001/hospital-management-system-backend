@@ -3,15 +3,15 @@ import {supabase} from "../config/supabase.js";
 import {sendPendingAppointmentsNotification} from "../services/notification.service.js";
 
 export const startAppointmentNotificationJobs = () => {
+    // فحص الحجوزات المعلقة كل ساعة
     cron.schedule(
-        "0 */2 * * *",
+        "0 * * * *",
         async () => {
             console.log(
                 `[Appointment Notification] Checking at ${new Date().toISOString()}`,
             );
 
             try {
-                // تاريخ اليوم
                 const now = new Date();
 
                 const today = new Date(
@@ -22,14 +22,16 @@ export const startAppointmentNotificationJobs = () => {
                     ),
                 );
 
-                // غداً
                 const tomorrow = new Date(today);
                 tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
                 const todayDate = today.toISOString().split("T")[0];
                 const tomorrowDate = tomorrow.toISOString().split("T")[0];
 
-                // جلب عدد الحجوزات المعلقة
+                console.log(
+                    `[Appointment Notification] Searching dates: ${todayDate} -> ${tomorrowDate}`,
+                );
+
                 const {count, error} = await supabase
                     .from("appointment")
                     .select("appointment_id", {
@@ -57,11 +59,14 @@ export const startAppointmentNotificationJobs = () => {
                     console.log(
                         "[Appointment Notification] No pending appointments. Skipping.",
                     );
-
                     return;
                 }
 
-                // إرسال الإشعار للاستقبال
+                // توجد حجوزات معلقة → إرسال إشعار
+                console.log(
+                    `[Appointment Notification] Sending notification for ${pendingCount} pending appointments...`,
+                );
+
                 const result = await sendPendingAppointmentsNotification({
                     count: pendingCount,
                 });
@@ -86,5 +91,5 @@ export const startAppointmentNotificationJobs = () => {
         },
     );
 
-    console.log("Appointment notification jobs started - Every 2 hours");
+    console.log("Appointment notification jobs started - Every hour");
 };

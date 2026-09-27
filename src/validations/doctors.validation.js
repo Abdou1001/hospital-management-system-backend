@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { supabase } from "../config/supabase.js";
+import {z} from "zod";
+import {supabase} from "../config/supabase.js";
 
 /* =========================
    Insert Doctor Validation
@@ -8,7 +8,7 @@ import { supabase } from "../config/supabase.js";
 export const insertDoctorSchema = z
     .object({
         full_name: z
-            .string( "اسم الدكتور مطلوب")
+            .string("اسم الدكتور مطلوب")
             .min(3, "اسم الدكتور قصير جدًا")
             .max(50, "اسم الدكتور طويل جدًا"),
 
@@ -22,12 +22,13 @@ export const insertDoctorSchema = z
         bio: z
             .string("الوصف مطلوب")
             .min(10, "الوصف قصير جدًا")
-            .max(1000, "الوصف طويل جدًا"),
+            .max(5000, "الوصف طويل جدًا"),
 
         education: z
-            .string("المؤهل العلمي مطلوب")
+            .string()
             .min(3, "المؤهل العلمي قصير جدًا")
-            .max(100, "المؤهل العلمي طويل جدًا"),
+            .max(100, "المؤهل العلمي طويل جدًا")
+            .optional(),
 
         gender: z.enum(["ذكر", "أنثى"], {
             error: () => ({
@@ -71,10 +72,6 @@ export const insertDoctorSchema = z
         }
     });
 
-
-
-
-
 /* =========================
    Update Doctor Validation
 ========================= */
@@ -97,8 +94,7 @@ export const updateDoctorSchema = z
         bio: z
             .string()
             .min(10, "الوصف قصير جدًا")
-            .max(1000, "الوصف طويل جدًا")
-            .optional(),
+            .max(5000, "الوصف طويل جدًا"),
 
         education: z
             .string()

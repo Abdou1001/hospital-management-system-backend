@@ -1,9 +1,9 @@
 // Convert Yemen local phone to international format
 export const normalizeYemenPhone = (phone) => {
-    if (!phone) return phone;
+    if (!phone) return phone.trim();
 
     // Remove spaces and "+"
-    phone = phone.replace(/\s+/g, "").replace("+", "");
+    phone = phone.trim().replace(/\s+/g, "").replace("+", "");
 
     // Already international
     if (phone.startsWith("967")) return phone;

@@ -140,6 +140,8 @@ export const register = AsyncHandler(async (req, res, next) => {
             );
         }
 
+        console.log(phone_number);
+
         // Generate OTP
         const {otp, hashedOTP, expires} = generateOTPData();
 

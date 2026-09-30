@@ -623,10 +623,15 @@ export const createAppointment = AsyncHandler(async (req, res, next) => {
             throw new ApiError("حدث خطأ أثناء إنشاء الحجز", 400);
 
         // Delete Caching
-        const year = new Date().getFullYear();
-        await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+        const appointmentYear = appointment_date
+            ? new Date(appointment_date).getFullYear()
+            : new Date().getFullYear();
+        const currentYear = new Date().getFullYear();
+        await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${appointmentYear}`);
+        if (appointmentYear !== currentYear) {
+            await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${currentYear}`);
+        }
         await deleteCache(CACHE_KEYS.DASHBOARD);
-        await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${year}`);
 
         res.status(201).json({
             status: "success",
@@ -800,7 +805,19 @@ export const updateAppointment = AsyncHandler(async (req, res, next) => {
     });
 
     // Delete Cache
-    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    const oldYear = currentAppointment.appointment_date
+        ? new Date(currentAppointment.appointment_date).getFullYear()
+        : null;
+    const newYear = appointment_date
+        ? new Date(appointment_date).getFullYear()
+        : oldYear;
+
+    if (oldYear) {
+        await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${oldYear}`);
+    }
+    if (newYear && newYear !== oldYear) {
+        await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${newYear}`);
+    }
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     if (appointment.doctor_schedule?.doctor?.path_image) {
@@ -953,7 +970,10 @@ export const changeAppointmentsStatus = AsyncHandler(async (req, res, next) => {
     }
 
     // Delete Cache
-    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    const appointmentYear = (changedAppointment?.appointment_date || appoint?.appointment_date)
+        ? new Date(changedAppointment?.appointment_date || appoint?.appointment_date).getFullYear()
+        : new Date().getFullYear();
+    await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${appointmentYear}`);
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Send notification
@@ -1065,7 +1085,10 @@ export const cancelAppointment = AsyncHandler(async (req, res, next) => {
         return next(new ApiError("حدث خطأ أثناء إلغاء الحجز", 400));
 
     // Delete Caching
-    await deleteCache(CACHE_KEYS.APPOINTMENTS_CHART);
+    const appointmentYear = (cancelledAppointment?.appointment_date || appoint?.appointment_date)
+        ? new Date(cancelledAppointment?.appointment_date || appoint?.appointment_date).getFullYear()
+        : new Date().getFullYear();
+    await deleteCache(`${CACHE_KEYS.APPOINTMENTS_CHART}:${appointmentYear}`);
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     res.status(200).json({

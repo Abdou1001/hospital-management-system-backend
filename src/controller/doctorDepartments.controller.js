@@ -265,6 +265,11 @@ export const assignDoctorToDepartment = AsyncHandler(async (req, res, next) => {
         return next(new ApiError("حدث خطأ أثناء ربط الدكتور بالقسم", 400));
 
     await deleteByPattern("doctor-departments:*");
+    await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENTS(doctor_id));
+    await deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(depart_id));
+    await deleteCache(CACHE_KEYS.DOCTOR(doctor_id));
+    await deleteByPattern("doctors:*");
+    await deleteByPattern("departments:*");
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     assign.doctor.path_image = getPublicImageUrl(
@@ -299,7 +304,7 @@ export const updateDoctorDepartment = AsyncHandler(async (req, res, next) => {
 
         .from("doctor_department")
 
-        .select("doctor_deprtment_id")
+        .select("doctor_deprtment_id, doctor_id, depart_id")
 
         .eq("doctor_deprtment_id", id)
 
@@ -369,6 +374,19 @@ export const updateDoctorDepartment = AsyncHandler(async (req, res, next) => {
         return next(new ApiError("حدث خطأ أثناء تعديل العلاقة", 400));
 
     await deleteByPattern("doctor-departments:*");
+    await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENT(id));
+    await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENTS(relation.doctor_id));
+    await deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(relation.depart_id));
+    await deleteCache(CACHE_KEYS.DOCTOR(relation.doctor_id));
+    if (doctor_id && doctor_id !== relation.doctor_id) {
+        await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENTS(doctor_id));
+        await deleteCache(CACHE_KEYS.DOCTOR(doctor_id));
+    }
+    if (depart_id && depart_id !== relation.depart_id) {
+        await deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(depart_id));
+    }
+    await deleteByPattern("doctors:*");
+    await deleteByPattern("departments:*");
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     updatedRelation.doctor.path_image = getPublicImageUrl(
@@ -400,7 +418,7 @@ export const deleteDoctorFromDepartment = AsyncHandler(
 
             .from("doctor_department")
 
-            .select("doctor_deprtment_id")
+            .select("doctor_deprtment_id, doctor_id, depart_id")
 
             .eq("doctor_deprtment_id", id)
 
@@ -420,6 +438,12 @@ export const deleteDoctorFromDepartment = AsyncHandler(
             return next(new ApiError("حدث خطأ أثناء حذف العلاقة", 400));
 
         await deleteByPattern("doctor-departments:*");
+        await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENT(id));
+        await deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENTS(relation.doctor_id));
+        await deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(relation.depart_id));
+        await deleteCache(CACHE_KEYS.DOCTOR(relation.doctor_id));
+        await deleteByPattern("doctors:*");
+        await deleteByPattern("departments:*");
         await deleteCache(CACHE_KEYS.DASHBOARD);
 
         res.status(200).json({

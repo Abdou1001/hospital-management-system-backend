@@ -329,6 +329,10 @@ export const deleteDepartment = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("departments:*");
+    await deleteCache(CACHE_KEYS.DEPARTMENT(id));
+    await deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(id));
+    await deleteByPattern("doctor-departments:*");
+    await deleteByPattern("doctors:*");
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     res.status(200).json({

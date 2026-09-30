@@ -309,6 +309,7 @@ export const assignDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     ========================================== */
     await deleteByPattern("doctor-schedules:*");
     await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(doctor_id));
+    await deleteCache(CACHE_KEYS.DOCTOR(doctor_id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     /* ==========================================
@@ -434,6 +435,7 @@ export const updateDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     ========================================== */
     await deleteByPattern("doctor-schedules:*");
     await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(update.doctor_id));
+    await deleteCache(CACHE_KEYS.DOCTOR(update.doctor_id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     /* ==========================================
@@ -463,7 +465,7 @@ export const deleteDoctorsSchedules = AsyncHandler(async (req, res, next) => {
     // Check of Id (Schedule) this exist
     const {data: schedule, error: scheduleError} = await supabase
         .from("doctor_schedule")
-        .select("schedule_id")
+        .select("schedule_id, doctor_id")
         .eq("schedule_id", id)
         .single();
 
@@ -498,8 +500,10 @@ export const deleteDoctorsSchedules = AsyncHandler(async (req, res, next) => {
             new ApiError("حدث خطأ أثناء حذف الدوام، حاول مرة اخرى", 400),
         );
 
+    const doctorId = schedule.doctor_id;
     await deleteByPattern("doctor-schedules:*");
-    await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(deleteSchdule.doctor_id));
+    await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(doctorId));
+    await deleteCache(CACHE_KEYS.DOCTOR(doctorId));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     // Response
@@ -548,6 +552,7 @@ export const changeDoctorScheduleStatus = AsyncHandler(
 
         await deleteByPattern("doctor-schedules:*");
         await deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(updatedSchedule.doctor_id));
+        await deleteCache(CACHE_KEYS.DOCTOR(updatedSchedule.doctor_id));
         await deleteCache(CACHE_KEYS.DASHBOARD);
 
         // Response

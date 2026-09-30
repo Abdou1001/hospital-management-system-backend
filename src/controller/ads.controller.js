@@ -325,6 +325,7 @@ export const deleteAd = AsyncHandler(async (req, res, next) => {
 
     // Delete caching to update data
     await deleteByPattern("ads:*");
+    await deleteCache(CACHE_KEYS.AD(id));
     await deleteCache(CACHE_KEYS.DASHBOARD);
 
     await deleteImage(STORAGE_BUCKETS.ADS, ad.path_image);

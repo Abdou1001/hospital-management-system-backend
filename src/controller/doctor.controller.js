@@ -323,9 +323,16 @@ export const insertDoctor = AsyncHandler(async (req, res, next) => {
            لأن بيانات الأطباء تغيرت.
         ========================================== */
 
-        await deleteByPattern("doctors:*");
-
-        await deleteCache(CACHE_KEYS.DASHBOARD);
+        await Promise.all([
+            deleteByPattern("doctors:*"),
+            deleteByPattern("doctor-departments:*"),
+            deleteByPattern("doctor-schedules:*"),
+            deleteByPattern("departments:*"),
+            deleteCache(CACHE_KEYS.DASHBOARD),
+            ...departmentIds.map((deptId) =>
+                deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(deptId)),
+            ),
+        ]);
 
         /* ==========================================
            7. تحويل مسار الصورة إلى Public URL
@@ -494,14 +501,24 @@ export const updateDoctor = AsyncHandler(async (req, res, next) => {
             // Cache دوامات الأطباء
             deleteByPattern("doctor-schedules:*"),
 
+            // Cache الأقسام لتحديث العدادات
+            deleteByPattern("departments:*"),
+
             // Cache الطبيب نفسه
             deleteCache(CACHE_KEYS.DOCTOR(id)),
+
+            // Cache أقسام هذا الطبيب تحديدًا
+            deleteCache(CACHE_KEYS.DOCTOR_DEPARTMENTS(id)),
 
             // Cache دوامات هذا الطبيب تحديدًا
             deleteCache(CACHE_KEYS.DOCTOR_SCHEDULE(id)),
 
             // Cache لوحة التحكم
             deleteCache(CACHE_KEYS.DASHBOARD),
+
+            ...departmentIds.map((deptId) =>
+                deleteCache(CACHE_KEYS.DEPARTMENT_DOCTORS(deptId)),
+            ),
         ]);
 
         /* ==========================================

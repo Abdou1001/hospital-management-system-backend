@@ -1,5 +1,6 @@
 import express from "express";
 import {
+    adminLogin,
     changePhoneNumber,
     forgetPassword,
     getMe,
@@ -36,6 +37,8 @@ const router = express.Router();
 
 // Login
 router.post("/login", authRateLimit, validate(loginSchema), login);
+// Login
+router.post("/adminlogin", authRateLimit, validate(loginSchema), adminLogin);
 
 // Register
 router.post("/register", authRateLimit, validate(registerSchema), register);

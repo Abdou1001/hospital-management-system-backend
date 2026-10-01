@@ -105,6 +105,74 @@ export const login = AsyncHandler(async (req, res, next) => {
     createSendToken(user, 200, res);
 });
 
+// @Desc Dashboard Admin Login
+// @Route POST /api/auth/admin-login
+// @Access Public
+export const adminLogin = AsyncHandler(async (req, res, next) => {
+    const { login, password } = req.body;
+
+    let query = supabase.from("user").select("*");
+
+    // Login by email or phone
+    if (login.includes("@")) {
+        query = query.eq("email", login.trim().toLowerCase());
+    } else {
+        query = query.eq(
+            "phone_number",
+            normalizeYemenPhone(login)
+        );
+    }
+
+    const { data: user, error } = await query.single();
+
+    // Check user + password
+    if (
+        error ||
+        !user ||
+        !(await bcrypt.compare(password, user?.password || ""))
+    ) {
+        return next(
+            new ApiError(
+                "بيانات الدخول غير صحيحة",
+                401
+            )
+        );
+    }
+
+    // 🔐 Dashboard only for admin
+    if (user.role !== "admin") {
+        return next(
+            new ApiError(
+                "ليس لديك صلاحية الدخول إلى لوحة الإدارة",
+                403
+            )
+        );
+    }
+
+    // Check phone verified
+    if (!user.phone_verified) {
+        return next(
+            new ApiError(
+                "الحساب غير مفعل. يرجى إكمال تفعيل رقم الهاتف.",
+                401
+            )
+        );
+    }
+
+    // Check account status
+    if (user.is_Active === "inactive") {
+        return next(
+            new ApiError(
+                "الحساب موقف من الإدارة، يرجى التواصل مع الإدارة",
+                401
+            )
+        );
+    }
+
+    // Generate JWT + Cookie
+    createSendToken(user, 200, res);
+});
+
 // @Desc Register New User
 // @Route POST : api/auth/register
 // @Access Public

@@ -36,10 +36,15 @@ app.set("trust proxy", 1);
 // Security Headers
 app.use(helmet());
 
-// Core to send data to front end on port 3000
+// CORS configuration
+const allowedOrigins = [
+    "http://localhost:3000",
+    "https://front-j15qkf91g-abdou1001s-projects.vercel.app",
+];
+
 app.use(
     cors({
-        origin: "http://localhost:3000",
+        origin: allowedOrigins,
         credentials: true,
     }),
 );
